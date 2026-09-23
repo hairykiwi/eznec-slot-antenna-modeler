@@ -187,9 +187,13 @@
     </div>
     <p class="hint">Upper bound on grid-edge length. Columns/rows are sized to fit the substrate exactly, at or under this value.</p>
 
-    <label>Wire diameter</label>
+    <label>Wire diameter (mesh)</label>
     <input type="number" id="wireDia" value="0" step="any" min="0.001">
     <p class="hint">Default is cell-size / &#960; (EZNEC manual's equal-surface-area rule for wire-grid modeling of a solid sheet); edit freely.</p>
+
+    <label>Feed wire diameter</label>
+    <input type="number" id="feedWireDia" value="0" step="any" min="0.001">
+    <p class="hint">A real feed conductor is thin, not the (deliberately thick) mesh wire -- kept separate. Default is a representative hookup-wire gauge; edit freely.</p>
 
     <button id="applyGridBtn" class="primary" style="width:100%; margin-top:12px;">(Re)build grid</button>
     <p class="warn" id="rebuildWarn" style="display:none;">Rebuilding regenerates rows/columns and clears any refinement/cell edits made so far.</p>
@@ -287,7 +291,8 @@
     length: 300,
     width: 80,
     maxCell: null,      // resolved cell size (set on build)
-    wireDia: null,
+    wireDia: null,      // mesh wire diameter
+    feedWireDia: null,  // feed wire diameter (kept separate -- a real feed conductor is thin)
     colWidths: [],       // length = cols, sums to `length`
     rowHeights: [],       // length = rows, sums to `width`
     cells: [],           // [row][col] boolean
@@ -357,6 +362,14 @@
       document.getElementById('wireDia').value = round(dia, 4);
     }
 
+    var feedDia = parseFloat(document.getElementById('feedWireDia').value);
+    if (!feedDia || feedDia <= 0) {
+      // Representative real hookup-wire gauge, independent of mesh cell
+      // size -- a real feed conductor doesn't scale with the antenna.
+      feedDia = units === 'mm' ? 1 : 0.04;
+      document.getElementById('feedWireDia').value = round(feedDia, 4);
+    }
+
     var cols = Math.max(1, Math.ceil(length / maxCellVal));
     var rows = Math.max(1, Math.ceil(width / maxCellVal));
 
@@ -367,6 +380,7 @@
     state.width = width;
     state.maxCell = maxCellVal;
     state.wireDia = dia;
+    state.feedWireDia = feedDia;
     state.colWidths = evenSplits(length, cols);
     state.rowHeights = evenSplits(width, rows);
     state.cells = makeArray2D(rows, cols, true);
@@ -1080,10 +1094,27 @@
 
     var branching = main.some(function (k) { return adj[k].length > 2; });
 
+    // Local cross-width: for every void cell in the main component that has
+    // a horizontal void neighbor, its cross-width is the row height there;
+    // for a vertical void neighbor, it's the column width. A cell with
+    // neither (an isolated single-cell void) contributes both dimensions.
+    var widths = [];
+    main.forEach(function (k) {
+      var node = parseKey(k);
+      var hasH = isVoid(node.r, node.c - 1) || isVoid(node.r, node.c + 1);
+      var hasV = isVoid(node.r - 1, node.c) || isVoid(node.r + 1, node.c);
+      if (hasH) widths.push(state.rowHeights[node.r]);
+      if (hasV) widths.push(state.colWidths[node.c]);
+      if (!hasH && !hasV) { widths.push(state.rowHeights[node.r]); widths.push(state.colWidths[node.c]); }
+    });
+    var widthMin = Math.min.apply(null, widths), widthMax = Math.max.apply(null, widths);
+
     return {
       length: pathLength + extA + extB,
       componentCount: components.length,
-      branching: branching
+      branching: branching,
+      widthMin: widthMin,
+      widthMax: widthMax
     };
   }
 
@@ -1104,11 +1135,25 @@
 
     var slot = computeSlotLength();
     if (slot) {
+      var dia = state.wireDia || 0;
+      var effLength = slot.length - dia;
       html += '<br><br>Measured slot length (centerline, end to end): <b>' + round(slot.length, 3) + ' ' + state.units + '</b>';
       var ratio = slot.length / lengthSuggest;
       html += ' (' + round(ratio * 100, 0) + '% of the 0.5&#955; suggestion).';
+      html += ' Effective (true opening, minus wire diameter): <b>' + round(effLength, 3) + ' ' + state.units + '</b>.';
       if (slot.componentCount > 1) html += ' Note: ' + slot.componentCount + ' separate void regions exist -- reporting the largest.';
       if (slot.branching) html += ' Note: this void has a branch/junction, so "end to end" is approximate (longest path through it).';
+
+      var wMin = slot.widthMin, wMax = slot.widthMax;
+      var sameWidth = Math.abs(wMax - wMin) < 1e-6;
+      var wNomStr = sameWidth ? round(wMin, 3) : (round(wMin, 3) + '&ndash;' + round(wMax, 3));
+      var effWMin = wMin - dia, effWMax = wMax - dia;
+      var effWStr = sameWidth ? round(effWMin, 3) : (round(effWMin, 3) + '&ndash;' + round(effWMax, 3));
+      html += '<br>Slot cross-width, nominal / effective: <b>' + wNomStr + '</b> / <b>' + effWStr + '</b> ' + state.units + '.';
+      if (effWMin <= 0) {
+        html += ' <span style="color:#ff8a80">Warning: wire diameter (' + round(dia, 3) + ' ' + state.units +
+          ') meets or exceeds the narrowest cross-width -- the slot may be electrically pinched shut. Reduce wire diameter or widen the slot.</span>';
+      }
     }
     el.innerHTML = html;
   }
@@ -1160,7 +1205,7 @@
       var fa = feedNodeXY(state.feed.a), fb = feedNodeXY(state.feed.b);
       var pa = applyZOffset(toXYZLocal(fa[0], fa[1]));
       var pb = applyZOffset(toXYZLocal(fb[0], fb[1]));
-      lines.push(wireLine(pa, pb, dia, 1));
+      lines.push(wireLine(pa, pb, state.feedWireDia, 1));
     }
 
     var wires = extractWires();
@@ -1263,11 +1308,13 @@
           : (oldUnits === 'in' && newUnits === 'mm') ? 25.4 : 1;
         var lenEl = document.getElementById('dimLength'), widEl = document.getElementById('dimWidth');
         var cellEl = document.getElementById('maxCell'), diaEl = document.getElementById('wireDia');
+        var feedDiaEl = document.getElementById('feedWireDia');
         var offEl = document.getElementById('planeOffset');
         lenEl.value = round(parseFloat(lenEl.value) * factor, 5);
         widEl.value = round(parseFloat(widEl.value) * factor, 5);
         cellEl.value = round(parseFloat(cellEl.value) * factor, 5);
         diaEl.value = round(parseFloat(diaEl.value) * factor, 5);
+        feedDiaEl.value = round(parseFloat(feedDiaEl.value) * factor, 5);
         offEl.value = round((parseFloat(offEl.value) || 0) * factor, 5);
       }
       state.units = newUnits;
@@ -1288,6 +1335,11 @@
   });
   document.getElementById('wireDia').addEventListener('input', function () {
     state.wireDia = parseFloat(this.value) || state.wireDia;
+    updateSlotHint();
+    updatePreview();
+  });
+  document.getElementById('feedWireDia').addEventListener('input', function () {
+    state.feedWireDia = parseFloat(this.value) || state.feedWireDia;
     updatePreview();
   });
   ['freqValue', 'freqUnit'].forEach(function (id) {
