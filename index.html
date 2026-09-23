@@ -107,8 +107,10 @@
   .hint { color: var(--text-dim); font-size: 11px; margin-top: 3px; line-height: 1.4; }
   .stat { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; color: var(--text-dim); }
   .stat b { color: var(--text); font-weight: 600; }
-  .toolbtn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 9px; }
-  .toolbtn .k { font-size: 10px; color: var(--text-dim); }
+  .toolbtn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 6px 9px; height: 42px; }
+  .k { font-size: 10px; color: var(--text-dim); }
+  .toolbar-action { display: flex; align-items: center; height: 42px; }
+  .toolbar-action-2line { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 6px 9px; height: 42px; }
   .divider { width: 1px; align-self: stretch; background: var(--panel-border); margin: 2px 4px; }
   #feedInfo { font-size: 12px; }
   #feedInfo .none { color: var(--text-dim); font-style: italic; }
@@ -241,19 +243,25 @@
       <button id="toolPaint" class="toolbtn active" data-tool="paint">
         <span>✏ Paint</span><span class="k">click / drag cells</span>
       </button>
+      <button id="fillAllBtn" class="toolbar-action-2line">
+        <span>Fill all</span><span class="k">Reset mesh</span>
+      </button>
+      <div class="divider"></div>
       <button id="toolRefineCol" class="toolbtn" data-tool="refineCol">
         <span>⋮ Split column</span><span class="k">click a column</span>
       </button>
       <button id="toolRefineRow" class="toolbtn" data-tool="refineRow">
         <span>⋯ Split row</span><span class="k">click a row</span>
       </button>
+      <div class="divider"></div>
       <button id="toolFeed" class="toolbtn" data-tool="feed">
         <span>⌖ Feed wire</span><span class="k">click 2 nodes</span>
       </button>
-      <button id="clearFeedBtn" title="Clear feed point">Clear feed</button>
+      <button id="clearFeedBtn" class="toolbar-action-2line" title="Clear feed point">
+        <span>Clear</span><span class="k">Feed wire</span>
+      </button>
       <div class="divider"></div>
-      <button id="fillAllBtn">Fill all</button>
-      <button id="undoBtn" title="Undo (Ctrl/Cmd+Z)">Undo</button>
+      <button id="undoBtn" class="toolbar-action" title="Undo (Ctrl/Cmd+Z)">Undo</button>
       <div class="divider"></div>
       <div style="display:flex; align-items:center; gap:4px;">
         <button id="zoomOutBtn" title="Zoom out">&minus;</button>
