@@ -1,4 +1,4 @@
-# EZNEC Slot Antenna Modeller
+# EZNEC Slot Antenna Modeler
 
 A single-page, no-install web tool for designing wire-grid slot antennas
 and exporting them as an EZNEC-compatible wire coordinate file.
