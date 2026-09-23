@@ -11,6 +11,8 @@ no crossings) by construction, and exports a file you can import directly.
 This is an independent, unofficial tool. It is not affiliated with or endorsed
 by EZNEC Software / Roy Lewallen, W7EL.
 
+![Screenshot of the Slot Antenna Modeler editing a folded (W-style) slot, with a feed wire placed across it](eznec-slot-antenna-modeler.png)
+
 ## Getting started
 
 No install, no build step, no server required. Just open `index.html` in any
