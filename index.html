@@ -215,7 +215,7 @@
     <p class="hint">A real feed conductor is thin, not the (deliberately thick) mesh wire -- kept separate. Default is a representative hookup-wire gauge; edit freely.</p>
 
     <button id="applyGridBtn" class="primary" style="width:100%; margin-top:12px;">(Re)build grid</button>
-    <p class="warn" id="rebuildWarn" style="display:none;">Rebuilding regenerates rows/columns and clears any refinement/cell edits made so far.</p>
+    <p class="hint" id="rebuildWarn">Rebuilding regenerates rows/columns and clears any refinement/cell edits made so far -- click Undo right after if that was accidental.</p>
 
     <h2>Slot guidance</h2>
     <p class="hint" id="slotHint">&nbsp;</p>
@@ -244,7 +244,7 @@
         <span>✏ Paint</span><span class="k">click / drag cells</span>
       </button>
       <button id="fillAllBtn" class="toolbar-action-2line">
-        <span>Fill all</span><span class="k">Reset mesh</span>
+        <span>Fill all</span><span class="k">Fills voids</span>
       </button>
       <div class="divider"></div>
       <button id="toolRefineCol" class="toolbtn" data-tool="refineCol">
@@ -383,6 +383,11 @@
     var cols = Math.max(1, Math.ceil(length / maxCellVal));
     var rows = Math.max(1, Math.ceil(width / maxCellVal));
 
+    // Snapshot the pre-rebuild grid so an accidental (Re)build click can be
+    // undone, same as any other edit -- skip on the very first build (page
+    // load), where there's nothing yet to preserve.
+    if (state.colWidths.length) pushUndo();
+
     state.units = units;
     state.plane = plane;
     state.offset = offset;
@@ -396,7 +401,6 @@
     state.cells = makeArray2D(rows, cols, true);
     state.feed = null;
     pendingFeedNode = null;
-    undoStack = [];
     zoomLevel = 1;
     var zoomLabelEl = document.getElementById('zoomLabel');
     if (zoomLabelEl) zoomLabelEl.textContent = '100%';
@@ -524,7 +528,10 @@
   function addRow(edge) {
     pushUndo();
     var h = newEdgeCellSize();
-    var atStart = edge === 'top';
+    // Row index 0 is world-Y=0, which the display renders at the visual
+    // BOTTOM (see vPix -- rows draw with Y increasing upward, matching
+    // EZNEC's convention). So the "bottom" edge is the array start.
+    var atStart = edge === 'bottom';
     var cols = state.cells.length ? state.cells[0].length : 0;
     var newRow = [];
     for (var c = 0; c < cols; c++) newRow.push(true);
@@ -539,7 +546,7 @@
   function removeRow(edge) {
     if (state.rowHeights.length <= 1) return;
     pushUndo();
-    var atStart = edge === 'top';
+    var atStart = edge === 'bottom'; // see note in addRow
     var idx = atStart ? 0 : state.rowHeights.length - 1;
     state.width -= state.rowHeights[idx];
     state.rowHeights.splice(idx, 1);
