@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slotted Antenna Modeller for EZNEC</title>
+<style>
+  :root {
+    --bg: #1b1e24;
+    --panel: #24282f;
+    --panel-border: #363c46;
+    --text: #e6e9ef;
+    --text-dim: #9aa2b1;
+    --accent: #4da3ff;
+    --accent-dim: #2c5d8a;
+    --metal: #7d8896;
+    --metal-line: #cfd6e0;
+    --void: #1b1e24;
+    --grid-line: #3a4049;
+    --feed: #ff5470;
+    --danger: #ff5470;
+    --ok: #4ddc8f;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 13px;
+  }
+  #app {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    height: 100vh;
+  }
+  #sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--panel-border);
+    overflow-y: auto;
+    padding: 14px;
+  }
+  #main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  #toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--panel-border);
+    flex-wrap: wrap;
+  }
+  #canvasWrap {
+    flex: 1;
+    overflow: auto;
+    position: relative;
+    background:
+      linear-gradient(var(--grid-line) 1px, transparent 1px) 0 0 / 24px 24px,
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0 / 24px 24px,
+      #14161b;
+    background-size: 24px 24px;
+  }
+  canvas { display: block; cursor: crosshair; }
+
+  h1 { font-size: 15px; margin: 0 0 4px; }
+  h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-dim);
+    margin: 18px 0 8px;
+    border-bottom: 1px solid var(--panel-border);
+    padding-bottom: 4px;
+  }
+  h2:first-of-type { margin-top: 6px; }
+  .sub { color: var(--text-dim); font-size: 11.5px; margin: 0 0 12px; line-height: 1.4; }
+  label { display: block; margin: 8px 0 3px; color: var(--text-dim); font-size: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+  input[type=text], input[type=number], select {
+    width: 100%;
+    background: #171a20;
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    padding: 5px 7px;
+    border-radius: 4px;
+    font-size: 12.5px;
+  }
+  input:focus, select:focus { outline: 1px solid var(--accent); }
+  .radiogroup { display: flex; gap: 10px; margin: 4px 0; }
+  .radiogroup label { display: flex; align-items: center; gap: 5px; color: var(--text); margin: 0; font-size: 12.5px; }
+  button {
+    background: #2b3038;
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  button:hover { background: #343a44; }
+  button.active { background: var(--accent-dim); border-color: var(--accent); color: #fff; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #08131f; font-weight: 600; }
+  button.primary:hover { background: #6bb4ff; }
+  button.danger { border-color: #6a2a34; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .hint { color: var(--text-dim); font-size: 11px; margin-top: 3px; line-height: 1.4; }
+  .stat { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; color: var(--text-dim); }
+  .stat b { color: var(--text); font-weight: 600; }
+  .toolbtn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 9px; }
+  .toolbtn .k { font-size: 10px; color: var(--text-dim); }
+  .divider { width: 1px; align-self: stretch; background: var(--panel-border); margin: 2px 4px; }
+  #feedInfo { font-size: 12px; }
+  #feedInfo .none { color: var(--text-dim); font-style: italic; }
+  a.filelink { color: var(--accent); }
+  .warn { color: #ffb454; font-size: 11.5px; margin-top: 4px; }
+  .err { color: var(--danger); font-size: 11.5px; margin-top: 4px; }
+  .legend { display:flex; gap:14px; font-size:11px; color:var(--text-dim); align-items:center; margin-left:auto; }
+  .edgeGroup { display:flex; align-items:center; gap:1px; }
+  .edgeGroup button {
+    padding: 6px 8px;
+    font-size: 12px;
+    border-radius: 0;
+  }
+  .edgeGroup button:first-child { border-radius: 4px 0 0 4px; }
+  .edgeGroup button:last-child { border-radius: 0 4px 4px 0; }
+  .edgeGroup button:nth-child(2) { margin-right: 5px; border-right: 1px solid var(--panel-border); }
+  .edgeGroup button:nth-child(3) { margin-left: 5px; border-left: 1px solid var(--panel-border); }
+  .swatch { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
+  textarea#exportPreview {
+    width: 100%; height: 160px; background:#0f1115; color:#c7d0dd; border:1px solid var(--panel-border);
+    border-radius:4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; padding:8px;
+    resize: vertical;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <h1>Slotted Antenna Modeller</h1>
+    <p class="sub">Design a wire-grid slotted-plate antenna and export an EZNEC "First Format Type" wire coordinate file.</p>
+
+    <h2>Units &amp; Frequency</h2>
+    <label>Units</label>
+    <div class="radiogroup">
+      <label><input type="radio" name="units" value="mm" checked> mm</label>
+      <label><input type="radio" name="units" value="in"> inch</label>
+    </div>
+
+    <label>Design frequency</label>
+    <div class="row">
+      <input type="number" id="freqValue" value="435" step="any" min="0">
+      <select id="freqUnit" style="flex:0 0 84px">
+        <option value="1e6">MHz</option>
+        <option value="1e9">GHz</option>
+        <option value="1e3">kHz</option>
+      </select>
+    </div>
+    <p class="hint" id="lambdaHint">&nbsp;</p>
+
+    <h2>Substrate</h2>
+    <label>Orientation plane</label>
+    <div class="radiogroup">
+      <label><input type="radio" name="plane" value="XY" checked> XY</label>
+      <label><input type="radio" name="plane" value="XZ"> XZ</label>
+      <label><input type="radio" name="plane" value="YZ"> YZ</label>
+    </div>
+    <label id="offsetLabel">Vertical offset (Z)</label>
+    <input type="number" id="planeOffset" value="0" step="any">
+    <p class="hint" id="offsetHint">&nbsp;</p>
+
+    <label>Outer dimensions (length × width)</label>
+    <div class="row">
+      <input type="number" id="dimLength" value="300" step="any" min="1">
+      <input type="number" id="dimWidth" value="80" step="any" min="1">
+    </div>
+    <p class="hint">Length runs along the grid's horizontal (columns), width along vertical (rows).</p>
+
+    <label>Base max cell size</label>
+    <div class="row">
+      <input type="number" id="maxCell" value="0" step="any" min="0.1">
+      <button id="suggestCellBtn" title="Set to 0.1&#215;wavelength">0.1&#955;</button>
+    </div>
+    <p class="hint">Upper bound on grid-edge length. Columns/rows are sized to fit the substrate exactly, at or under this value.</p>
+
+    <label>Wire diameter</label>
+    <input type="number" id="wireDia" value="0" step="any" min="0.001">
+    <p class="hint">Default is cell-size / &#960; (EZNEC manual's equal-surface-area rule for wire-grid modeling of a solid sheet); edit freely.</p>
+
+    <button id="applyGridBtn" class="primary" style="width:100%; margin-top:12px;">(Re)build grid</button>
+    <p class="warn" id="rebuildWarn" style="display:none;">Rebuilding regenerates rows/columns and clears any refinement/cell edits made so far.</p>
+
+    <h2>Slot guidance</h2>
+    <p class="hint" id="slotHint">&nbsp;</p>
+
+    <h2>Feed point</h2>
+    <p class="hint">Click two nodes across the slot to insert a feed wire between them. It's exported as a real 1-segment wire; add the EZNEC source at 50% (its center) — that's the point marked in red. Use "Clear feed" in the toolbar to remove it.</p>
+    <div id="feedInfo"><span class="none">None marked — use the Feed tool and click two grid nodes.</span></div>
+    <p class="warn" id="feedWarn" style="display:none;"></p>
+
+    <h2>Grow / shrink substrate</h2>
+    <p class="hint">Use the column/row button groups in the toolbar (top right, next to Fit) to add or remove metal at an edge, sized to the current base max cell size. Live -- doesn't reset the design.</p>
+
+    <h2>Model stats</h2>
+    <div class="stat"><span>Grid</span><b id="statGrid">–</b></div>
+    <div class="stat"><span>Filled cells</span><b id="statCells">–</b></div>
+    <div class="stat"><span>Exported wires</span><b id="statWires">–</b></div>
+    <div class="stat"><span>Min / max wire length</span><b id="statLen">–</b></div>
+    <p class="err" id="geomErr" style="display:none;"></p>
+
+    <h2>Export</h2>
+    <button id="exportBtn" class="primary" style="width:100%;">Download wire coordinate file (.txt)</button>
+    <label style="margin-top:10px;">Preview</label>
+    <textarea id="exportPreview" readonly></textarea>
+  </div>
+
+  <div id="main">
+    <div id="toolbar">
+      <button id="toolPaint" class="toolbtn active" data-tool="paint">
+        <span>✏ Paint</span><span class="k">click / drag cells</span>
+      </button>
+      <button id="toolRefineCol" class="toolbtn" data-tool="refineCol">
+        <span>⋮ Split column</span><span class="k">click a column</span>
+      </button>
+      <button id="toolRefineRow" class="toolbtn" data-tool="refineRow">
+        <span>⋯ Split row</span><span class="k">click a row</span>
+      </button>
+      <button id="toolFeed" class="toolbtn" data-tool="feed">
+        <span>⌖ Feed wire</span><span class="k">click 2 nodes</span>
+      </button>
+      <button id="clearFeedBtn" title="Clear feed point">Clear feed</button>
+      <div class="divider"></div>
+      <button id="fillAllBtn">Fill all</button>
+      <button id="undoBtn" title="Undo (Ctrl/Cmd+Z)">Undo</button>
+      <div class="divider"></div>
+      <div style="display:flex; align-items:center; gap:4px;">
+        <button id="zoomOutBtn" title="Zoom out">&minus;</button>
+        <span id="zoomLabel" style="min-width:40px; text-align:center; font-size:11px; color:var(--text-dim);" title="Zoom relative to fit-to-view. Scroll-wheel over the canvas also zooms.">100%</span>
+        <button id="zoomInBtn" title="Zoom in">+</button>
+        <button id="zoomFitBtn" title="Reset zoom to fit">Fit</button>
+      </div>
+      <div class="divider"></div>
+      <div class="edgeGroup" title="Grow / shrink substrate columns">
+        <button id="addColLeft" title="Add column (left)">+&#9664;</button>
+        <button id="removeColLeft" title="Remove column (left)">&minus;&#9664;</button>
+        <button id="removeColRight" title="Remove column (right)">&#9654;&minus;</button>
+        <button id="addColRight" title="Add column (right)">&#9654;+</button>
+      </div>
+      <div class="edgeGroup" title="Grow / shrink substrate rows">
+        <button id="addRowTop" title="Add row (top)">+&#9650;</button>
+        <button id="removeRowTop" title="Remove row (top)">&minus;&#9650;</button>
+        <button id="removeRowBottom" title="Remove row (bottom)">&#9660;&minus;</button>
+        <button id="addRowBottom" title="Add row (bottom)">&#9660;+</button>
+      </div>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--metal)"></span>metal (filled)</span>
+        <span><span class="swatch" style="background:var(--void)"></span>slot / void</span>
+        <span><span class="swatch" style="background:var(--feed)"></span>feed point</span>
+      </div>
+    </div>
+    <div id="canvasWrap">
+      <canvas id="grid"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------------------------------------------------------------------
+  // Model
+  // ---------------------------------------------------------------------
+  // Non-uniform rectilinear grid: colWidths[i] / rowHeights[j] define a
+  // rows x cols array of cells (cells[r][c] boolean: true = metal/filled).
+  // Every grid line spans the full extent, so wires can only ever meet at
+  // shared endpoints (no T-junctions, no crossings) -- satisfies EZNEC's
+  // "wires connect only at ends" requirement by construction.
+  var state = {
+    units: 'mm',
+    plane: 'XY',
+    offset: 0,
+    length: 300,
+    width: 80,
+    maxCell: null,      // resolved cell size (set on build)
+    wireDia: null,
+    colWidths: [],       // length = cols, sums to `length`
+    rowHeights: [],       // length = rows, sums to `width`
+    cells: [],           // [row][col] boolean
+    feed: null            // {a:{r,c}, b:{r,c}} -- two grid-node indices, joined by an inserted feed wire
+  };
+
+  var tool = 'paint';
+  var pendingFeedNode = null; // first node clicked while placing a feed wire, awaiting the second
+  var undoStack = [];
+  var MAX_UNDO = 60;
+
+  function lambdaMeters() {
+    var f = parseFloat(document.getElementById('freqValue').value);
+    var mult = parseFloat(document.getElementById('freqUnit').value);
+    if (!f || f <= 0) return null;
+    var hz = f * mult;
+    return 299792458 / hz; // metres
+  }
+
+  function metersToUnits(m) {
+    return state.units === 'mm' ? m * 1000 : m * 39.37007874015748;
+  }
+
+  function pushUndo() {
+    undoStack.push(JSON.stringify({
+      colWidths: state.colWidths, rowHeights: state.rowHeights,
+      cells: state.cells, feed: state.feed
+    }));
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+  }
+
+  function undo() {
+    if (!undoStack.length) return;
+    var snap = JSON.parse(undoStack.pop());
+    state.colWidths = snap.colWidths;
+    state.rowHeights = snap.rowHeights;
+    state.cells = snap.cells;
+    state.feed = snap.feed;
+    pendingFeedNode = null;
+    renderAll();
+  }
+
+  // ---------------------------------------------------------------------
+  // Grid construction
+  // ---------------------------------------------------------------------
+  function buildGrid() {
+    var lambda = lambdaMeters();
+    var maxCellVal = parseFloat(document.getElementById('maxCell').value);
+    if (!maxCellVal || maxCellVal <= 0) {
+      if (lambda) maxCellVal = metersToUnits(lambda) * 0.1;
+      else maxCellVal = 10;
+      document.getElementById('maxCell').value = round(maxCellVal, 4);
+    }
+
+    var length = parseFloat(document.getElementById('dimLength').value) || 1;
+    var width = parseFloat(document.getElementById('dimWidth').value) || 1;
+    var units = document.querySelector('input[name=units]:checked').value;
+    var plane = document.querySelector('input[name=plane]:checked').value;
+    var offset = parseFloat(document.getElementById('planeOffset').value) || 0;
+
+    var dia = parseFloat(document.getElementById('wireDia').value);
+    if (!dia || dia <= 0) {
+      // EZNEC manual (p.81, Wire Grid Creation): equal-surface-area rule --
+      // "diameter equal to the spacing divided by pi" -- gives a wire-grid
+      // mesh whose total conductor surface area matches the solid sheet.
+      dia = maxCellVal / Math.PI;
+      document.getElementById('wireDia').value = round(dia, 4);
+    }
+
+    var cols = Math.max(1, Math.ceil(length / maxCellVal));
+    var rows = Math.max(1, Math.ceil(width / maxCellVal));
+
+    state.units = units;
+    state.plane = plane;
+    state.offset = offset;
+    state.length = length;
+    state.width = width;
+    state.maxCell = maxCellVal;
+    state.wireDia = dia;
+    state.colWidths = evenSplits(length, cols);
+    state.rowHeights = evenSplits(width, rows);
+    state.cells = makeArray2D(rows, cols, true);
+    state.feed = null;
+    pendingFeedNode = null;
+    undoStack = [];
+    zoomLevel = 1;
+    var zoomLabelEl = document.getElementById('zoomLabel');
+    if (zoomLabelEl) zoomLabelEl.textContent = '100%';
+
+    updateOffsetLabel();
+    renderAll();
+  }
+
+  function evenSplits(total, n) {
+    var arr = [];
+    for (var i = 0; i < n; i++) arr.push(total / n);
+    return arr;
+  }
+
+  function makeArray2D(rows, cols, val) {
+    var a = [];
+    for (var r = 0; r < rows; r++) {
+      var row = [];
+      for (var c = 0; c < cols; c++) row.push(val);
+      a.push(row);
+    }
+    return a;
+  }
+
+  function updateOffsetLabel() {
+    var hint = document.getElementById('offsetHint');
+    if (state.plane === 'XY') {
+      hint.textContent = 'The plate is horizontal (in X/Y); this sets its height above a ground plane at Z=0.';
+    } else {
+      hint.textContent = 'The plate stands vertically (like a flag on a mast along Z); this slides it up/down the mast.';
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Refinement: split a whole column or row into two (halves its size),
+  // preserving cell fill state on both halves. Because every grid line
+  // still spans the full sheet, this never creates a dangling T-junction.
+  // ---------------------------------------------------------------------
+  function splitColumn(ci) {
+    pushUndo();
+    var w = state.colWidths[ci] / 2;
+    state.colWidths.splice(ci, 1, w, w);
+    for (var r = 0; r < state.cells.length; r++) {
+      var v = state.cells[r][ci];
+      state.cells[r].splice(ci, 1, v, v);
+    }
+    if (state.feed) {
+      if (state.feed.a.c > ci) state.feed.a.c += 1;
+      if (state.feed.b.c > ci) state.feed.b.c += 1;
+    }
+    renderAll();
+  }
+
+  function splitRow(ri) {
+    pushUndo();
+    var h = state.rowHeights[ri] / 2;
+    state.rowHeights.splice(ri, 1, h, h);
+    var srcRow = state.cells[ri];
+    state.cells.splice(ri, 1, srcRow.slice(), srcRow.slice());
+    if (state.feed) {
+      if (state.feed.a.r > ri) state.feed.a.r += 1;
+      if (state.feed.b.r > ri) state.feed.b.r += 1;
+    }
+    renderAll();
+  }
+
+  // ---------------------------------------------------------------------
+  // Grow / shrink: add or remove a whole row/column of metal at an edge,
+  // sized to the current base max cell size. Live edits -- unlike
+  // (Re)build grid, these don't touch existing cell/feed state elsewhere.
+  // ---------------------------------------------------------------------
+  function newEdgeCellSize() {
+    var v = parseFloat(document.getElementById('maxCell').value);
+    return (v && v > 0) ? v : (state.maxCell || 10);
+  }
+
+  function clearDegenerateFeed() {
+    if (!state.feed) return;
+    var a = feedNodeXY(state.feed.a), b = feedNodeXY(state.feed.b);
+    if (pointsEqual2D(a, b)) state.feed = null;
+  }
+
+  function syncDimensionFields() {
+    document.getElementById('dimLength').value = round(state.length, 5);
+    document.getElementById('dimWidth').value = round(state.width, 5);
+  }
+
+  function addColumn(edge) {
+    pushUndo();
+    var w = newEdgeCellSize();
+    var atStart = edge === 'left';
+    state.colWidths.splice(atStart ? 0 : state.colWidths.length, 0, w);
+    for (var r = 0; r < state.cells.length; r++) {
+      state.cells[r].splice(atStart ? 0 : state.cells[r].length, 0, true);
+    }
+    if (atStart && state.feed) { state.feed.a.c += 1; state.feed.b.c += 1; }
+    state.length += w;
+    syncDimensionFields();
+    renderAll();
+  }
+
+  function removeColumn(edge) {
+    if (state.colWidths.length <= 1) return;
+    pushUndo();
+    var atStart = edge === 'left';
+    var idx = atStart ? 0 : state.colWidths.length - 1;
+    state.length -= state.colWidths[idx];
+    state.colWidths.splice(idx, 1);
+    for (var r = 0; r < state.cells.length; r++) state.cells[r].splice(idx, 1);
+    if (state.feed) {
+      var maxNode = state.colWidths.length;
+      if (atStart) {
+        state.feed.a.c = Math.max(0, state.feed.a.c - 1);
+        state.feed.b.c = Math.max(0, state.feed.b.c - 1);
+      } else {
+        state.feed.a.c = Math.min(state.feed.a.c, maxNode);
+        state.feed.b.c = Math.min(state.feed.b.c, maxNode);
+      }
+      clearDegenerateFeed();
+    }
+    syncDimensionFields();
+    renderAll();
+  }
+
+  function addRow(edge) {
+    pushUndo();
+    var h = newEdgeCellSize();
+    var atStart = edge === 'top';
+    var cols = state.cells.length ? state.cells[0].length : 0;
+    var newRow = [];
+    for (var c = 0; c < cols; c++) newRow.push(true);
+    state.rowHeights.splice(atStart ? 0 : state.rowHeights.length, 0, h);
+    state.cells.splice(atStart ? 0 : state.cells.length, 0, newRow);
+    if (atStart && state.feed) { state.feed.a.r += 1; state.feed.b.r += 1; }
+    state.width += h;
+    syncDimensionFields();
+    renderAll();
+  }
+
+  function removeRow(edge) {
+    if (state.rowHeights.length <= 1) return;
+    pushUndo();
+    var atStart = edge === 'top';
+    var idx = atStart ? 0 : state.rowHeights.length - 1;
+    state.width -= state.rowHeights[idx];
+    state.rowHeights.splice(idx, 1);
+    state.cells.splice(idx, 1);
+    if (state.feed) {
+      var maxNode = state.rowHeights.length;
+      if (atStart) {
+        state.feed.a.r = Math.max(0, state.feed.a.r - 1);
+        state.feed.b.r = Math.max(0, state.feed.b.r - 1);
+      } else {
+        state.feed.a.r = Math.min(state.feed.a.r, maxNode);
+        state.feed.b.r = Math.min(state.feed.b.r, maxNode);
+      }
+      clearDegenerateFeed();
+    }
+    syncDimensionFields();
+    renderAll();
+  }
+
+  // ---------------------------------------------------------------------
+  // Coordinates
+  // ---------------------------------------------------------------------
+  function colEdgePositions() {
+    var pos = [0];
+    for (var i = 0; i < state.colWidths.length; i++) pos.push(pos[i] + state.colWidths[i]);
+    return pos;
+  }
+  function rowEdgePositions() {
+    var pos = [0];
+    for (var i = 0; i < state.rowHeights.length; i++) pos.push(pos[i] + state.rowHeights[i]);
+    return pos;
+  }
+
+  // Map (gridX along length, gridY along width) to a *local* XYZ per plane,
+  // with the axis perpendicular to the substrate fixed at 0. The Z offset is
+  // applied separately (applyZOffset) only when producing world/export
+  // coordinates, so the 2D editing view never shifts as Offset changes.
+  function toXYZLocal(gx, gy) {
+    switch (state.plane) {
+      case 'XY': return [gx, gy, 0];
+      case 'XZ': return [gx, 0, gy];
+      case 'YZ': return [0, gx, gy];
+    }
+  }
+
+  function applyZOffset(p) {
+    return [p[0], p[1], p[2] + state.offset];
+  }
+
+  // ---------------------------------------------------------------------
+  // Wire extraction: a grid edge is included iff it borders >=1 filled cell.
+  // extractWires2D works in plain (gx,gy) grid space (unit-agnostic of the
+  // chosen plane) so geometry checks like the feed-wire crossing test don't
+  // need to care which plane is active. extractWires() projects those into
+  // local 3D (still unoffset) for drawing and stats.
+  // ---------------------------------------------------------------------
+  function extractWires2D() {
+    var rows = state.cells.length, cols = rows ? state.cells[0].length : 0;
+    var xs = colEdgePositions(), ys = rowEdgePositions();
+    var wires = [];
+
+    function filled(r, c) {
+      if (r < 0 || r >= rows || c < 0 || c >= cols) return false;
+      return state.cells[r][c];
+    }
+
+    // Vertical edges: between column c-1 and c, spanning row r.
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c <= cols; c++) {
+        if (filled(r, c - 1) || filled(r, c)) {
+          var x = xs[c];
+          wires.push({ p1: [x, ys[r]], p2: [x, ys[r + 1]] });
+        }
+      }
+    }
+    // Horizontal edges: between row r-1 and r, spanning column c.
+    for (var c2 = 0; c2 < cols; c2++) {
+      for (var r2 = 0; r2 <= rows; r2++) {
+        if (filled(r2 - 1, c2) || filled(r2, c2)) {
+          var y = ys[r2];
+          wires.push({ p1: [xs[c2], y], p2: [xs[c2 + 1], y] });
+        }
+      }
+    }
+    return wires;
+  }
+
+  function extractWires() {
+    var wires2d = extractWires2D();
+    var wires = [];
+    for (var i = 0; i < wires2d.length; i++) {
+      wires.push({
+        p1: toXYZLocal(wires2d[i].p1[0], wires2d[i].p1[1]),
+        p2: toXYZLocal(wires2d[i].p2[0], wires2d[i].p2[1])
+      });
+    }
+    return wires;
+  }
+
+  function feedNodeXY(node) {
+    var xs = colEdgePositions(), ys = rowEdgePositions();
+    return [xs[node.c], ys[node.r]];
+  }
+
+  // ---------------------------------------------------------------------
+  // Feed-wire geometry check: refuse a feed wire that would cross an
+  // existing mesh wire without connecting to it, or that exactly duplicates
+  // one (both are the kind of invalid geometry EZNEC's Geometry Check flags).
+  // ---------------------------------------------------------------------
+  function pointsEqual2D(a, b) {
+    return Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6;
+  }
+
+  function orientation(px, py, qx, qy, rx, ry) {
+    var val = (qy - py) * (rx - qx) - (qx - px) * (ry - qy);
+    if (Math.abs(val) < 1e-9) return 0;
+    return val > 0 ? 1 : 2;
+  }
+  function onSegment(px, py, qx, qy, rx, ry) {
+    return Math.min(px, rx) - 1e-9 <= qx && qx <= Math.max(px, rx) + 1e-9 &&
+      Math.min(py, ry) - 1e-9 <= qy && qy <= Math.max(py, ry) + 1e-9;
+  }
+  function segmentsIntersect(p1, p2, p3, p4) {
+    var o1 = orientation(p1[0], p1[1], p2[0], p2[1], p3[0], p3[1]);
+    var o2 = orientation(p1[0], p1[1], p2[0], p2[1], p4[0], p4[1]);
+    var o3 = orientation(p3[0], p3[1], p4[0], p4[1], p1[0], p1[1]);
+    var o4 = orientation(p3[0], p3[1], p4[0], p4[1], p2[0], p2[1]);
+    if (o1 !== o2 && o3 !== o4) return true;
+    if (o1 === 0 && onSegment(p1[0], p1[1], p3[0], p3[1], p2[0], p2[1])) return true;
+    if (o2 === 0 && onSegment(p1[0], p1[1], p4[0], p4[1], p2[0], p2[1])) return true;
+    if (o3 === 0 && onSegment(p3[0], p3[1], p1[0], p1[1], p4[0], p4[1])) return true;
+    if (o4 === 0 && onSegment(p3[0], p3[1], p2[0], p2[1], p4[0], p4[1])) return true;
+    return false;
+  }
+
+  function findFeedConflict(a, b) {
+    if (pointsEqual2D(a, b)) return 'Pick two different nodes.';
+    var wires = extractWires2D();
+    for (var i = 0; i < wires.length; i++) {
+      var p3 = wires[i].p1, p4 = wires[i].p2;
+      if ((pointsEqual2D(a, p3) && pointsEqual2D(b, p4)) || (pointsEqual2D(a, p4) && pointsEqual2D(b, p3))) {
+        return 'Those two nodes are already joined by an existing mesh wire -- pick nodes across the slot instead.';
+      }
+      var sharesEndpoint = pointsEqual2D(a, p3) || pointsEqual2D(a, p4) || pointsEqual2D(b, p3) || pointsEqual2D(b, p4);
+      if (sharesEndpoint) continue; // touching at a shared node is fine
+      if (segmentsIntersect(a, b, p3, p4)) {
+        return 'That feed wire would cross an existing mesh wire without connecting to it -- pick different nodes.';
+      }
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------------
+  // Canvas rendering
+  // ---------------------------------------------------------------------
+  var canvas = document.getElementById('grid');
+  var ctx = canvas.getContext('2d');
+  var PAD = 30;
+  var scalePxPerUnit = 1;
+  var zoomLevel = 1; // multiplier on top of the auto fit-to-container scale
+  var ZOOM_MIN = 0.25, ZOOM_MAX = 8, ZOOM_STEP = 1.25;
+
+  function layout() {
+    var wrap = document.getElementById('canvasWrap');
+    var availW = wrap.clientWidth - PAD * 2 - 20;
+    var availH = wrap.clientHeight - PAD * 2 - 20;
+    var sx = availW / state.length;
+    var sy = availH / state.width;
+    var fitScale = Math.max(0.5, Math.min(sx, sy, 40));
+    scalePxPerUnit = fitScale * zoomLevel;
+    canvas.width = state.length * scalePxPerUnit + PAD * 2;
+    canvas.height = state.width * scalePxPerUnit + PAD * 2;
+  }
+
+  // The vertical (row) axis is drawn increasing UPWARD on screen -- matching
+  // the "^" arrow in its own axis label and the up-convention virtually all
+  // antenna/CAD viewers (including EZNEC) use -- while world coordinates
+  // themselves still increase in the normal (row-index) direction. Without
+  // this flip the canvas draws row 0 at the top (increasing downward),
+  // which imports into EZNEC upside down relative to how it was painted.
+  function vPix(worldY) { return (state.width - worldY) * scalePxPerUnit; }
+  function vWorld(pixelY) { return state.width - pixelY / scalePxPerUnit; }
+
+  function setZoom(z, anchor) {
+    var wrap = document.getElementById('canvasWrap');
+    var before = anchor ? {
+      worldX: (anchor.x + wrap.scrollLeft - PAD) / scalePxPerUnit,
+      worldY: (anchor.y + wrap.scrollTop - PAD) / scalePxPerUnit
+    } : null;
+    zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+    document.getElementById('zoomLabel').textContent = Math.round(zoomLevel * 100) + '%';
+    layout();
+    draw();
+    if (before) {
+      wrap.scrollLeft = before.worldX * scalePxPerUnit + PAD - anchor.x;
+      wrap.scrollTop = before.worldY * scalePxPerUnit + PAD - anchor.y;
+    } else {
+      wrap.scrollLeft = 0;
+      wrap.scrollTop = 0;
+    }
+  }
+
+  function draw() {
+    var xs = colEdgePositions(), ys = rowEdgePositions();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(PAD, PAD);
+
+    // filled cells
+    for (var r = 0; r < state.cells.length; r++) {
+      for (var c = 0; c < state.cells[r].length; c++) {
+        if (!state.cells[r][c]) continue;
+        ctx.fillStyle = '#556072';
+        ctx.fillRect(xs[c] * scalePxPerUnit, vPix(ys[r + 1]),
+          state.colWidths[c] * scalePxPerUnit, state.rowHeights[r] * scalePxPerUnit);
+      }
+    }
+
+    // extracted wires (this is the actual export geometry)
+    ctx.strokeStyle = getCSS('--metal-line');
+    ctx.lineWidth = 2;
+    var wires = extractWires();
+    ctx.beginPath();
+    for (var i = 0; i < wires.length; i++) {
+      var w = wires[i];
+      var a = projectToCanvas(w.p1), b = projectToCanvas(w.p2);
+      ctx.moveTo(a[0] * scalePxPerUnit, vPix(a[1]));
+      ctx.lineTo(b[0] * scalePxPerUnit, vPix(b[1]));
+    }
+    ctx.stroke();
+
+    // faint full grid lines (all candidate edges) for editing reference
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (var ci = 0; ci <= xs.length - 1; ci++) {
+      ctx.moveTo(xs[ci] * scalePxPerUnit, 0);
+      ctx.lineTo(xs[ci] * scalePxPerUnit, state.width * scalePxPerUnit);
+    }
+    for (var ri = 0; ri <= ys.length - 1; ri++) {
+      ctx.moveTo(0, vPix(ys[ri]));
+      ctx.lineTo(state.length * scalePxPerUnit, vPix(ys[ri]));
+    }
+    ctx.stroke();
+
+    // feed wire: two end nodes joined by a line, with the recommended
+    // (50%/center) source location marked.
+    if (state.feed) {
+      var fa = feedNodeXY(state.feed.a), fb = feedNodeXY(state.feed.b);
+      ctx.strokeStyle = getCSS('--feed');
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(fa[0] * scalePxPerUnit, vPix(fa[1]));
+      ctx.lineTo(fb[0] * scalePxPerUnit, vPix(fb[1]));
+      ctx.stroke();
+      ctx.fillStyle = getCSS('--feed');
+      [fa, fb].forEach(function (p) {
+        ctx.beginPath();
+        ctx.arc(p[0] * scalePxPerUnit, vPix(p[1]), 4, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      var mx = (fa[0] + fb[0]) / 2, my = (fa[1] + fb[1]) / 2;
+      ctx.beginPath();
+      ctx.arc(mx * scalePxPerUnit, vPix(my), 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    } else if (pendingFeedNode) {
+      var pp = feedNodeXY(pendingFeedNode);
+      ctx.strokeStyle = getCSS('--feed');
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(pp[0] * scalePxPerUnit, vPix(pp[1]), 6, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // outer border + axis labels
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0, 0, state.length * scalePxPerUnit, state.width * scalePxPerUnit);
+
+    ctx.restore();
+
+    ctx.fillStyle = '#9aa2b1';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(axisLabelH() + ' (' + state.units + ') →', PAD, canvas.height - 8);
+    ctx.save();
+    ctx.translate(12, PAD + (state.width * scalePxPerUnit) / 2 + 20);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText(axisLabelV() + ' (' + state.units + ') →', 0, 0);
+    ctx.restore();
+  }
+
+  function axisLabelH() { return state.plane === 'YZ' ? 'Y' : 'X'; }
+  function axisLabelV() { return state.plane === 'XY' ? 'Y' : 'Z'; }
+
+  function projectToCanvas(p) {
+    // p is [x,y,z]; recover the two in-plane coords in (gx,gy) order used by toXYZ.
+    switch (state.plane) {
+      case 'XY': return [p[0], p[1]];
+      case 'XZ': return [p[0], p[2]];
+      case 'YZ': return [p[1], p[2]];
+    }
+  }
+
+  function getCSS(varName) {
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  }
+
+  function renderAll() {
+    layout();
+    draw();
+    updateStats();
+    updateFeedInfo();
+    updateSlotHint();
+    updatePreview();
+  }
+
+  // ---------------------------------------------------------------------
+  // Hit testing / interaction
+  // ---------------------------------------------------------------------
+  function cellAt(px, py) {
+    var x = (px - PAD) / scalePxPerUnit;
+    var y = vWorld(py - PAD);
+    if (x < 0 || y < 0 || x > state.length || y > state.width) return null;
+    var xs = colEdgePositions(), ys = rowEdgePositions();
+    var c = findIndex(xs, x), r = findIndex(ys, y);
+    if (c === -1 || r === -1) return null;
+    return { r: r, c: c };
+  }
+  function findIndex(edges, v) {
+    for (var i = 0; i < edges.length - 1; i++) {
+      if (v >= edges[i] && v < edges[i + 1]) return i;
+    }
+    return -1;
+  }
+
+  function nearestNode(px, py) {
+    var x = (px - PAD) / scalePxPerUnit;
+    var y = vWorld(py - PAD);
+    var xs = colEdgePositions(), ys = rowEdgePositions();
+    var c = nearestIndex(xs, x), r = nearestIndex(ys, y);
+    return { r: r, c: c };
+  }
+  function nearestIndex(edges, v) {
+    var best = 0, bd = Infinity;
+    for (var i = 0; i < edges.length; i++) {
+      var d = Math.abs(edges[i] - v);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+
+  var painting = false;
+  var paintValue = true;
+
+  canvas.addEventListener('mousedown', function (e) {
+    var rect = canvas.getBoundingClientRect();
+    var px = e.clientX - rect.left, py = e.clientY - rect.top;
+
+    if (tool === 'paint') {
+      var cell = cellAt(px, py);
+      if (!cell) return;
+      pushUndo();
+      paintValue = !state.cells[cell.r][cell.c];
+      state.cells[cell.r][cell.c] = paintValue;
+      painting = true;
+      renderAll();
+    } else if (tool === 'refineCol') {
+      var cc = cellAt(px, py);
+      if (!cc) return;
+      splitColumn(cc.c);
+    } else if (tool === 'refineRow') {
+      var rc = cellAt(px, py);
+      if (!rc) return;
+      splitRow(rc.r);
+    } else if (tool === 'feed') {
+      var node = nearestNode(px, py);
+      if (!pendingFeedNode) {
+        pendingFeedNode = node;
+        renderAll();
+        return;
+      }
+      var a = pendingFeedNode, b = node;
+      pendingFeedNode = null;
+      var conflict = findFeedConflict(feedNodeXY(a), feedNodeXY(b));
+      var warnEl = document.getElementById('feedWarn');
+      if (conflict) {
+        warnEl.textContent = conflict;
+        warnEl.style.display = '';
+        renderAll();
+        return;
+      }
+      warnEl.style.display = 'none';
+      pushUndo();
+      state.feed = { a: a, b: b };
+      renderAll();
+    }
+  });
+
+  canvas.addEventListener('mousemove', function (e) {
+    if (!painting || tool !== 'paint') return;
+    var rect = canvas.getBoundingClientRect();
+    var px = e.clientX - rect.left, py = e.clientY - rect.top;
+    var cell = cellAt(px, py);
+    if (!cell) return;
+    if (state.cells[cell.r][cell.c] !== paintValue) {
+      state.cells[cell.r][cell.c] = paintValue;
+      renderAll();
+    }
+  });
+  window.addEventListener('mouseup', function () { painting = false; });
+
+  // ---------------------------------------------------------------------
+  // Stats / validation
+  // ---------------------------------------------------------------------
+  function updateStats() {
+    var rows = state.cells.length, cols = rows ? state.cells[0].length : 0;
+    document.getElementById('statGrid').textContent = rows + ' × ' + cols + ' cells';
+    var filled = 0;
+    for (var r = 0; r < rows; r++) for (var c = 0; c < cols; c++) if (state.cells[r][c]) filled++;
+    document.getElementById('statCells').textContent = filled;
+
+    var wires = extractWires();
+    var wireCount = wires.length + (state.feed ? 1 : 0);
+    document.getElementById('statWires').textContent = wireCount;
+
+    var minLen = Infinity, maxLen = 0;
+    for (var i = 0; i < wires.length; i++) {
+      var w = wires[i];
+      var len = Math.hypot(w.p2[0] - w.p1[0], w.p2[1] - w.p1[1], w.p2[2] - w.p1[2]);
+      if (len < minLen) minLen = len;
+      if (len > maxLen) maxLen = len;
+    }
+    if (state.feed) {
+      var fa = feedNodeXY(state.feed.a), fb = feedNodeXY(state.feed.b);
+      var flen = Math.hypot(fb[0] - fa[0], fb[1] - fa[1]);
+      if (flen < minLen) minLen = flen;
+      if (flen > maxLen) maxLen = flen;
+    }
+    document.getElementById('statLen').textContent = wireCount
+      ? (round(minLen, 3) + ' / ' + round(maxLen, 3) + ' ' + state.units)
+      : '–';
+
+    var errEl = document.getElementById('geomErr');
+    if (wires.length === 0) {
+      errEl.style.display = '';
+      errEl.textContent = 'No metal cells filled — nothing to export.';
+    } else {
+      errEl.style.display = 'none';
+    }
+  }
+
+  function updateFeedInfo() {
+    var el = document.getElementById('feedInfo');
+    if (!state.feed) {
+      el.innerHTML = pendingFeedNode
+        ? '<span class="none">First node set — click the second node to complete the feed wire.</span>'
+        : '<span class="none">None marked — use the Feed tool and click two grid nodes.</span>';
+      return;
+    }
+    var pa = applyZOffset(toXYZLocal(feedNodeXY(state.feed.a)[0], feedNodeXY(state.feed.a)[1]));
+    var pb = applyZOffset(toXYZLocal(feedNodeXY(state.feed.b)[0], feedNodeXY(state.feed.b)[1]));
+    var pc = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2];
+    var len = Math.hypot(pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]);
+    el.innerHTML =
+      'End A: ' + fmtXYZ(pa) + '<br>' +
+      'End B: ' + fmtXYZ(pb) + '<br>' +
+      'Length: ' + round(len, 4) + ' ' + state.units + '<br>' +
+      'Source (50% / center): <b>' + fmtXYZ(pc) + '</b>';
+  }
+
+  function fmtXYZ(p) {
+    return 'X=' + round(p[0], 4) + ' Y=' + round(p[1], 4) + ' Z=' + round(p[2], 4) + ' ' + state.units;
+  }
+
+  // ---------------------------------------------------------------------
+  // Slot length: the void cells form a graph (edges between edge-adjacent
+  // void cells, weighted by center-to-center distance). Because every edge
+  // in that graph is purely horizontal or vertical, summing edge weights
+  // along a path exactly follows the slot's centerline through any bends
+  // (S/W folds) rather than cutting corners. The longest path through the
+  // graph (found by the standard double-BFS "tree diameter" sweep) is taken
+  // as the slot's centerline; half the terminal cells' width/height is
+  // added at each end to reach the true open ends rather than stopping at
+  // the last cell's center.
+  // ---------------------------------------------------------------------
+  function computeSlotLength() {
+    var rows = state.cells.length, cols = rows ? state.cells[0].length : 0;
+    var xs = colEdgePositions(), ys = rowEdgePositions();
+    function isVoid(r, c) { return r >= 0 && r < rows && c >= 0 && c < cols && !state.cells[r][c]; }
+    function key(r, c) { return r + ',' + c; }
+    function parseKey(k) { var p = k.split(',').map(Number); return { r: p[0], c: p[1] }; }
+    function center(r, c) { return [(xs[c] + xs[c + 1]) / 2, (ys[r] + ys[r + 1]) / 2]; }
+
+    var adj = {}, nodes = [];
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        if (!isVoid(r, c)) continue;
+        var k = key(r, c);
+        nodes.push(k);
+        adj[k] = [];
+        [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]].forEach(function (n) {
+          if (isVoid(n[0], n[1])) {
+            var p1 = center(r, c), p2 = center(n[0], n[1]);
+            adj[k].push({ k: key(n[0], n[1]), d: Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) });
+          }
+        });
+      }
+    }
+    if (!nodes.length) return null;
+
+    var visited = {}, components = [];
+    nodes.forEach(function (start) {
+      if (visited[start]) return;
+      var comp = [], queue = [start];
+      visited[start] = true;
+      while (queue.length) {
+        var cur = queue.shift();
+        comp.push(cur);
+        adj[cur].forEach(function (e) { if (!visited[e.k]) { visited[e.k] = true; queue.push(e.k); } });
+      }
+      components.push(comp);
+    });
+    components.sort(function (a, b) { return b.length - a.length; });
+    var main = components[0];
+
+    function bfsWithParents(startKey) {
+      var dist = {}, parent = {};
+      dist[startKey] = 0; parent[startKey] = null;
+      var order = [startKey], idx = 0;
+      while (idx < order.length) {
+        var cur = order[idx++];
+        adj[cur].forEach(function (e) {
+          if (!(e.k in dist)) { dist[e.k] = dist[cur] + e.d; parent[e.k] = cur; order.push(e.k); }
+        });
+      }
+      var farKey = startKey, farDist = 0;
+      for (var kk in dist) if (dist[kk] > farDist) { farDist = dist[kk]; farKey = kk; }
+      return { farKey: farKey, farDist: farDist, parent: parent };
+    }
+
+    var pass1 = bfsWithParents(main[0]);
+    var pass2 = bfsWithParents(pass1.farKey);
+    var endAKey = pass1.farKey, endBKey = pass2.farKey;
+    var pathLength = pass2.farDist;
+
+    var pathKeys = [];
+    for (var cur = endBKey; cur !== null; cur = pass2.parent[cur]) pathKeys.push(cur);
+    var nodeA = parseKey(endAKey), nodeB = parseKey(endBKey);
+    var extA, extB;
+    if (pathKeys.length < 2) {
+      extA = extB = 0;
+      pathLength = Math.max(state.colWidths[nodeA.c], state.rowHeights[nodeA.r]);
+    } else {
+      var neighborOfA = parseKey(pathKeys[pathKeys.length - 2]);
+      var neighborOfB = parseKey(pathKeys[1]);
+      extA = (neighborOfA.r === nodeA.r) ? state.colWidths[nodeA.c] / 2 : state.rowHeights[nodeA.r] / 2;
+      extB = (neighborOfB.r === nodeB.r) ? state.colWidths[nodeB.c] / 2 : state.rowHeights[nodeB.r] / 2;
+    }
+
+    var branching = main.some(function (k) { return adj[k].length > 2; });
+
+    return {
+      length: pathLength + extA + extB,
+      componentCount: components.length,
+      branching: branching
+    };
+  }
+
+  function updateSlotHint() {
+    var lambda = lambdaMeters();
+    var el = document.getElementById('slotHint');
+    if (!lambda) { el.textContent = 'Enter a design frequency to see slot sizing guidance.'; return; }
+    var lamU = metersToUnits(lambda);
+    var roundTo = state.units === 'mm' ? 1 : 0.05;
+    var lengthSuggest = roundToStep(lamU * 0.5, roundTo);
+    var wLo = roundToStep(lamU * 0.01, roundTo);
+    var wHi = roundToStep(lamU * 0.06, roundTo);
+    var html = 'At this frequency, &#955; &asymp; ' + round(lamU, 2) + ' ' + state.units +
+      '. Typical slot length &asymp; 0.5&#955; &asymp; <b>' + lengthSuggest + ' ' + state.units +
+      '</b>; width typically 0.01&#955;&ndash;0.06&#955; &asymp; <b>' + wLo + '&ndash;' + wHi + ' ' + state.units +
+      '</b> (rounded to nearest ' + roundTo + ' ' + state.units + '). ' +
+      'Use "Split row/column" near the slot ends and any corners (S/W-fold) to refine the mesh there before painting the void.';
+
+    var slot = computeSlotLength();
+    if (slot) {
+      html += '<br><br>Measured slot length (centerline, end to end): <b>' + round(slot.length, 3) + ' ' + state.units + '</b>';
+      var ratio = slot.length / lengthSuggest;
+      html += ' (' + round(ratio * 100, 0) + '% of the 0.5&#955; suggestion).';
+      if (slot.componentCount > 1) html += ' Note: ' + slot.componentCount + ' separate void regions exist -- reporting the largest.';
+      if (slot.branching) html += ' Note: this void has a branch/junction, so "end to end" is approximate (longest path through it).';
+    }
+    el.innerHTML = html;
+  }
+
+  function updateLambdaHint() {
+    var lambda = lambdaMeters();
+    var el = document.getElementById('lambdaHint');
+    if (!lambda) { el.textContent = 'Enter a frequency to compute λ and suggested cell size.'; return; }
+    var lamU = metersToUnits(lambda);
+    el.textContent = 'λ ≈ ' + round(lamU, 3) + ' ' + state.units + '   (0.1λ ≈ ' + round(lamU * 0.1, 3) + ' ' + state.units + ')';
+  }
+
+  function roundToStep(v, step) { return round(Math.round(v / step) * step, 4); }
+  function round(x, n) { var a = Math.pow(10, n); return Math.round(x * a) / a; }
+
+  // ---------------------------------------------------------------------
+  // Export
+  // ---------------------------------------------------------------------
+  function wireLine(p1, p2, dia, segs) {
+    var fields = [
+      round(p1[0], 5), round(p1[1], 5), round(p1[2], 5),
+      round(p2[0], 5), round(p2[1], 5), round(p2[2], 5),
+      round(dia, 5)
+    ];
+    if (segs) fields.push(segs);
+    return fields.join(' ');
+  }
+
+  function buildExportLines() {
+    var lines = [];
+    lines.push('; Slotted antenna wire mesh -- generated by Slotted Antenna Modeller');
+    lines.push('; Plane: ' + state.plane + '   Vertical (Z) offset: ' + state.offset + ' ' + state.units);
+    lines.push('; Substrate: ' + state.length + ' x ' + state.width + ' ' + state.units +
+      '   Grid: ' + state.cells.length + ' rows x ' + (state.cells[0] ? state.cells[0].length : 0) + ' cols');
+    var f = parseFloat(document.getElementById('freqValue').value);
+    if (f) lines.push('; Design frequency: ' + f + ' ' + document.getElementById('freqUnit').selectedOptions[0].textContent);
+    if (state.feed) {
+      lines.push('; Feed wire is wire #1 below (1 segment) -- add the EZNEC source there at 50% (its center).');
+      lines.push('; Keeping it as wire #1 means the source (wire 1, 50%) stays valid across most edits/iterations.');
+    }
+    lines.push('; NOTE: this file contains wires only. Frequency and ground must still be set in EZNEC.');
+    lines.push(state.units + ' ' + state.units);
+
+    var dia = state.wireDia;
+
+    // The feed wire is emitted first so it's always wire #1 in EZNEC --
+    // that keeps a source defined as "wire 1, 50%" valid as the mesh is edited.
+    if (state.feed) {
+      var fa = feedNodeXY(state.feed.a), fb = feedNodeXY(state.feed.b);
+      var pa = applyZOffset(toXYZLocal(fa[0], fa[1]));
+      var pb = applyZOffset(toXYZLocal(fb[0], fb[1]));
+      lines.push(wireLine(pa, pb, dia, 1));
+    }
+
+    var wires = extractWires();
+    for (var i = 0; i < wires.length; i++) {
+      var w = wires[i];
+      lines.push(wireLine(applyZOffset(w.p1), applyZOffset(w.p2), dia));
+    }
+    return lines;
+  }
+
+  function updatePreview() {
+    var lines = buildExportLines();
+    document.getElementById('exportPreview').value = lines.slice(0, 400).join('\n');
+  }
+
+  function doExport() {
+    // EZNEC only runs on Windows and its ASCII importer expects native
+    // Windows line endings; a pure-LF file can make the whole file fail
+    // to parse ("No valid wires found") even when every field is valid.
+    var text = buildExportLines().join('\r\n') + '\r\n';
+    var blob = new Blob([text], { type: 'text/plain' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'slot_antenna_wires.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  // ---------------------------------------------------------------------
+  // UI wiring
+  // ---------------------------------------------------------------------
+  document.querySelectorAll('.toolbtn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.toolbtn').forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      tool = btn.getAttribute('data-tool');
+      pendingFeedNode = null;
+      document.getElementById('feedWarn').style.display = 'none';
+      renderAll();
+    });
+  });
+
+  document.getElementById('suggestCellBtn').addEventListener('click', function () {
+    var lambda = lambdaMeters();
+    if (!lambda) return;
+    document.getElementById('maxCell').value = round(metersToUnits(lambda) * 0.1, 4);
+  });
+
+  document.getElementById('applyGridBtn').addEventListener('click', buildGrid);
+
+  document.getElementById('fillAllBtn').addEventListener('click', function () {
+    pushUndo();
+    for (var r = 0; r < state.cells.length; r++)
+      for (var c = 0; c < state.cells[r].length; c++) state.cells[r][c] = true;
+    renderAll();
+  });
+
+  document.getElementById('undoBtn').addEventListener('click', undo);
+
+  document.getElementById('zoomInBtn').addEventListener('click', function () { setZoom(zoomLevel * ZOOM_STEP); });
+  document.getElementById('zoomOutBtn').addEventListener('click', function () { setZoom(zoomLevel / ZOOM_STEP); });
+  document.getElementById('zoomFitBtn').addEventListener('click', function () { setZoom(1); });
+
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var rect = canvas.getBoundingClientRect();
+    var anchor = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    setZoom(zoomLevel * (e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP), anchor);
+  }, { passive: false });
+
+  document.getElementById('addRowTop').addEventListener('click', function () { addRow('top'); });
+  document.getElementById('removeRowTop').addEventListener('click', function () { removeRow('top'); });
+  document.getElementById('addRowBottom').addEventListener('click', function () { addRow('bottom'); });
+  document.getElementById('removeRowBottom').addEventListener('click', function () { removeRow('bottom'); });
+  document.getElementById('addColLeft').addEventListener('click', function () { addColumn('left'); });
+  document.getElementById('removeColLeft').addEventListener('click', function () { removeColumn('left'); });
+  document.getElementById('addColRight').addEventListener('click', function () { addColumn('right'); });
+  document.getElementById('removeColRight').addEventListener('click', function () { removeColumn('right'); });
+
+  document.getElementById('clearFeedBtn').addEventListener('click', function () {
+    pushUndo();
+    state.feed = null;
+    pendingFeedNode = null;
+    document.getElementById('feedWarn').style.display = 'none';
+    renderAll();
+  });
+
+  document.getElementById('exportBtn').addEventListener('click', doExport);
+
+  document.querySelectorAll('input[name=units]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      var oldUnits = state.units, newUnits = this.value;
+      if (oldUnits !== newUnits) {
+        // Convert existing numeric fields so the physical size is preserved
+        // (a grid built in mm must not silently become the same numbers in inch).
+        var factor = (oldUnits === 'mm' && newUnits === 'in') ? (1 / 25.4)
+          : (oldUnits === 'in' && newUnits === 'mm') ? 25.4 : 1;
+        var lenEl = document.getElementById('dimLength'), widEl = document.getElementById('dimWidth');
+        var cellEl = document.getElementById('maxCell'), diaEl = document.getElementById('wireDia');
+        var offEl = document.getElementById('planeOffset');
+        lenEl.value = round(parseFloat(lenEl.value) * factor, 5);
+        widEl.value = round(parseFloat(widEl.value) * factor, 5);
+        cellEl.value = round(parseFloat(cellEl.value) * factor, 5);
+        diaEl.value = round(parseFloat(diaEl.value) * factor, 5);
+        offEl.value = round((parseFloat(offEl.value) || 0) * factor, 5);
+      }
+      state.units = newUnits;
+      updateLambdaHint(); updateSlotHint();
+      buildGrid(); // rebuild so internal grid coordinates match the new unit exactly
+    });
+  });
+  document.querySelectorAll('input[name=plane]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      state.plane = this.value;
+      updateOffsetLabel();
+      renderAll();
+    });
+  });
+  document.getElementById('planeOffset').addEventListener('input', function () {
+    state.offset = parseFloat(this.value) || 0;
+    renderAll();
+  });
+  document.getElementById('wireDia').addEventListener('input', function () {
+    state.wireDia = parseFloat(this.value) || state.wireDia;
+    updatePreview();
+  });
+  ['freqValue', 'freqUnit'].forEach(function (id) {
+    document.getElementById(id).addEventListener('input', function () {
+      updateLambdaHint(); updateSlotHint();
+    });
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      undo();
+    }
+  });
+
+  window.addEventListener('resize', function () { layout(); draw(); });
+
+  // ---------------------------------------------------------------------
+  // Init
+  // ---------------------------------------------------------------------
+  updateLambdaHint();
+  updateSlotHint();
+  buildGrid();
+})();
+</script>
+</body>
+</html>
