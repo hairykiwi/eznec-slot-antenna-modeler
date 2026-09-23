@@ -58,11 +58,7 @@
     flex: 1;
     overflow: auto;
     position: relative;
-    background:
-      linear-gradient(var(--grid-line) 1px, transparent 1px) 0 0 / 24px 24px,
-      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0 / 24px 24px,
-      #14161b;
-    background-size: 24px 24px;
+    background: #14161b;
   }
   canvas { display: block; cursor: crosshair; }
 
@@ -744,11 +740,13 @@
     ctx.save();
     ctx.translate(PAD, PAD);
 
-    // filled cells
+    // cells: explicitly paint both metal (filled) and void, rather than
+    // leaving void as "whatever shows through the transparent canvas" --
+    // keeps the legend swatch and the actual rendering in agreement.
+    var voidColor = getCSS('--void');
     for (var r = 0; r < state.cells.length; r++) {
       for (var c = 0; c < state.cells[r].length; c++) {
-        if (!state.cells[r][c]) continue;
-        ctx.fillStyle = '#556072';
+        ctx.fillStyle = state.cells[r][c] ? '#556072' : voidColor;
         ctx.fillRect(xs[c] * scalePxPerUnit, vPix(ys[r + 1]),
           state.colWidths[c] * scalePxPerUnit, state.rowHeights[r] * scalePxPerUnit);
       }
