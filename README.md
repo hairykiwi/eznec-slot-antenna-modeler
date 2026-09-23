@@ -1,6 +1,6 @@
-# EZNEC Slotted Antenna Modeller
+# EZNEC Slot Antenna Modeller
 
-A single-page, no-install web tool for designing wire-grid slotted-plate antennas
+A single-page, no-install web tool for designing wire-grid slot antennas
 and exporting them as an EZNEC-compatible wire coordinate file.
 
 It's aimed at slot antennas: paint a slot (straight, S-fold, or W-fold) into a
