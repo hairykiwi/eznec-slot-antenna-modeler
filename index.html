@@ -94,15 +94,15 @@
   .radiogroup { display: flex; gap: 10px; margin: 4px 0; }
   .radiogroup label { display: flex; align-items: center; gap: 5px; color: var(--text); margin: 0; font-size: 12.5px; }
   button {
-    background: #2b3038;
-    border: 1px solid var(--panel-border);
+    background: #333a45;
+    border: 1px solid #4a515c;
     color: var(--text);
     padding: 6px 10px;
     border-radius: 4px;
     font-size: 12px;
     cursor: pointer;
   }
-  button:hover { background: #343a44; }
+  button:hover { background: #3d4552; border-color: #6b7583; }
   button.active { background: var(--accent-dim); border-color: var(--accent); color: #fff; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #08131f; font-weight: 600; }
   button.primary:hover { background: #6bb4ff; }
@@ -188,8 +188,11 @@
     <p class="hint">Upper bound on grid-edge length. Columns/rows are sized to fit the substrate exactly, at or under this value.</p>
 
     <label>Wire diameter (mesh)</label>
-    <input type="number" id="wireDia" value="0" step="any" min="0.001">
-    <p class="hint">Default is cell-size / &#960; (EZNEC manual's equal-surface-area rule for wire-grid modeling of a solid sheet); edit freely.</p>
+    <div class="row">
+      <input type="number" id="wireDia" value="0" step="any" min="0.001">
+      <button id="suggestWireDiaBtn" title="Set to (current base max cell size) / &#960;">cell/&#960;</button>
+    </div>
+    <p class="hint">Default is cell-size / &#960; (EZNEC manual's equal-surface-area rule for wire-grid modeling of a solid sheet); edit freely. Doesn't auto-follow cell-size changes -- use the button to resync.</p>
 
     <label>Feed wire diameter</label>
     <input type="number" id="feedWireDia" value="0" step="any" min="0.001">
@@ -1255,6 +1258,16 @@
     var lambda = lambdaMeters();
     if (!lambda) return;
     document.getElementById('maxCell').value = round(metersToUnits(lambda) * 0.1, 4);
+  });
+
+  document.getElementById('suggestWireDiaBtn').addEventListener('click', function () {
+    var cell = parseFloat(document.getElementById('maxCell').value);
+    if (!cell || cell <= 0) return;
+    var dia = round(cell / Math.PI, 4);
+    document.getElementById('wireDia').value = dia;
+    state.wireDia = dia;
+    updateSlotHint();
+    updatePreview();
   });
 
   document.getElementById('applyGridBtn').addEventListener('click', buildGrid);
