@@ -329,7 +329,8 @@
   function pushUndo() {
     undoStack.push(JSON.stringify({
       colWidths: state.colWidths, rowHeights: state.rowHeights,
-      cells: state.cells, feed: state.feed
+      cells: state.cells, feed: state.feed,
+      length: state.length, width: state.width
     }));
     if (undoStack.length > MAX_UNDO) undoStack.shift();
   }
@@ -341,6 +342,14 @@
     state.rowHeights = snap.rowHeights;
     state.cells = snap.cells;
     state.feed = snap.feed;
+    // Grow/shrink (and rebuild) also change the substrate's overall size,
+    // which drives canvas sizing and the Y-axis flip -- without restoring
+    // these too, the border/reference-grid stay sized to the stale value
+    // while the cells themselves are correctly restored, leaving a
+    // mismatched "ghost" outline of the pre-undo size.
+    state.length = snap.length;
+    state.width = snap.width;
+    syncDimensionFields();
     pendingFeedNode = null;
     renderAll();
   }
