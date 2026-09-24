@@ -36,12 +36,21 @@ drag it into a browser window.
   or YZ (vertical) plate it slides the whole plate up/down like a flag on a
   mast.
 - **Outer dimensions** — the plate's overall length x width.
+- **Grow/shrink substrate** — a compass-style grid of arrow buttons right
+  below Outer dimensions: solid arrows (pointing outward) add a row/column
+  at that edge, hollow arrows (pointing inward) remove one, sized to the
+  base max cell size below. Unlike (Re)build grid, this is a live edit —
+  it doesn't reset your design, and updates the Outer dimensions fields to
+  match.
 - **Base max cell size** — upper bound on grid-edge length; the "0.1&lambda;"
   button fills in the suggested value. Rows/columns are sized to fit the
   substrate exactly, at or under this value.
 - **Wire diameter (mesh)** — diameter of the wire-grid mesh wires. Defaults to
   `cell size / pi`, EZNEC's documented equal-surface-area rule for modeling a
   solid sheet as a wire grid (see the EZNEC manual, "Wire Grid Creation").
+  The "cell/&pi;" button recomputes it from the current base max cell size
+  on demand — it doesn't auto-follow cell-size changes, since you may have
+  intentionally set it to a real material thickness.
 - **Feed wire diameter** — diameter of the feed wire only, kept independent
   of the (deliberately thick) mesh diameter. Defaults to a representative
   real hookup-wire gauge.
@@ -50,32 +59,31 @@ drag it into a browser window.
 
 ### 3. Editing the grid
 
-Toolbar tools (top of the canvas):
+Toolbar tools (top of the canvas), grouped by what they act on:
 
-- **Paint** — click or drag cells to toggle them between metal (filled) and
-  slot/void. This is how you carve a slot, including folded (S/W-style)
-  shapes.
-- **Split column / Split row** — click a column or row to subdivide it into
-  two, for locally refining the mesh near slot ends and corners without
-  affecting the rest of the grid. Splitting keeps every grid line spanning
-  the full sheet, so wires can only ever meet at shared endpoints — this is
-  what keeps the exported geometry NEC/EZNEC-Pro+-safe even with a
-  non-uniform grid.
-- **Feed wire** — click two grid nodes across the slot to insert a feed wire
-  between them. It's exported as a real 1-segment wire so that an EZNEC
-  source placed at 50% (its center) — the point marked in red — lands
-  exactly at the wire's midpoint. The feed wire is always exported as
-  wire #1, so a source defined as "wire 1, 50%" in EZNEC keeps working as
-  you iterate on the slot shape.
-- **Clear feed** — removes the feed wire.
-- **Fill all** — resets every cell to filled (undoes all voids).
-- **Undo** — steps back through paint/split/feed/grow-shrink edits.
+- **Paint** / **Fill all** — Paint clicks or drags cells to toggle them
+  between metal (filled) and slot/void; this is how you carve a slot,
+  including folded (S/W-style) shapes. Fill all resets every cell in the
+  current mesh back to filled (undoes all voids) without changing the grid
+  structure — for a full reset use (Re)build grid instead.
+- **Split column** / **Split row** — click a column or row to subdivide it
+  into two, for locally refining the mesh near slot ends and corners
+  without affecting the rest of the grid. Splitting keeps every grid line
+  spanning the full sheet, so wires can only ever meet at shared endpoints
+  — this is what keeps the exported geometry NEC/EZNEC-Pro+-safe even with
+  a non-uniform grid.
+- **Feed wire** / **Clear** — Feed wire: click two grid nodes across the
+  slot to insert a feed wire between them. It's exported as a real
+  1-segment wire so that an EZNEC source placed at 50% (its center) — the
+  point marked in red — lands exactly at the wire's midpoint. The feed
+  wire is always exported as wire #1, so a source defined as "wire 1, 50%"
+  in EZNEC keeps working as you iterate on the slot shape. Clear removes
+  it.
+- **Undo** — steps back through paint/split/feed/grow-shrink/rebuild edits.
+  (Re)build grid pushes onto the same undo history rather than clearing
+  it, so an accidental rebuild click is one Undo away from full recovery.
 - **Zoom** — `-` / `+` / `Fit` buttons, or scroll the mouse wheel over the
   canvas (zooms centered on the cursor).
-- **Column/row edge groups** (`+`/`-` with arrows) — grow or shrink the
-  substrate by one row/column at a given edge, sized to the current base max
-  cell size. Unlike (Re)build grid, this is a live edit that doesn't reset
-  your design.
 
 ### 4. Slot Guidance
 
