@@ -11,7 +11,7 @@ no crossings) by construction, and exports a file you can import directly.
 This is an independent, unofficial tool. It is not affiliated with or endorsed
 by EZNEC Software / Roy Lewallen, W7EL.
 
-![Screenshot of the Slot Antenna Modeler editing a folded (W-style) slot, with a feed wire placed across it](eznec-slot-antenna-modeler.png)
+![Screenshot of the Slot Antenna Modeler editing John Portune's Aluminum-Tape Staggered Window Glass Slot design, with a feed wire placed across it](examples/portune-window-slot-2m/tool-modified.png)
 
 ## Getting started
 
@@ -124,6 +124,17 @@ in EZNEC afterward.
   additional void/fill painting.
 - Tested primarily on desktop Chromium-based browsers; should work on any
   modern browser but hasn't been extensively tested elsewhere.
+
+## Worked example
+
+[Portune's Aluminum-Tape Staggered Window Glass Slot (2m)](examples/portune-window-slot-2m/) —
+a full before/after case study: modeling the published dimensions directly gave SWR of
+2.5-10 across the band, while widening the substrate margin and locally increasing
+mesh density near the feed brought that down to 1.2-2.5. Includes every EZNEC
+screenshot and the raw `.EZ`/wire-coordinate files so you can load the results
+yourself.
+
+![SWR plot for the modified design: 1.2 to 2.5 across 144-148MHz](examples/portune-window-slot-2m/04-swr-144-148mhz-modified.png)
 
 ## License
 
