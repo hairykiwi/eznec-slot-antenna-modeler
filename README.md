@@ -71,14 +71,28 @@ Toolbar tools (top of the canvas), grouped by what they act on:
   without affecting the rest of the grid. Splitting keeps every grid line
   spanning the full sheet, so wires can only ever meet at shared endpoints
   — this is what keeps the exported geometry NEC/EZNEC-Pro+-safe even with
-  a non-uniform grid.
+  a non-uniform grid. Lines created by splitting are drawn in muted cyan
+  (see the legend), so you can always see which lines are original and
+  which were added.
+- **Refine all** / **Restore uniform mesh** — Refine all splits every row
+  and column in two, doubling mesh density everywhere while keeping your
+  painted slot (handy for checking whether a result holds as the mesh gets
+  finer). It leaves the wire diameter alone, so set that by hand for the
+  new spacing. Restore uniform mesh merges every split row and column back
+  to its original spacing, again keeping your painting. It is
+  all-or-nothing: if the two halves of a split band were painted
+  differently, it refuses, says where, and changes nothing. Both are
+  undoable.
 - **Feed wire** / **Clear** — Feed wire: click two grid nodes across the
   slot to insert a feed wire between them. It's exported as a real
   1-segment wire so that an EZNEC source placed at 50% (its center) — the
   point marked in red — lands exactly at the wire's midpoint. The feed
   wire is always exported as wire #1, so a source defined as "wire 1, 50%"
   in EZNEC keeps working as you iterate on the slot shape. Clear removes
-  it.
+  it, leaving dashed "ghost" circles where it was (a Restore that removes
+  the line the feed sits on does the same). With the Feed tool, click the
+  ghost's center circle to put the feed back, if its nodes still exist;
+  Clear again dismisses the ghost.
 - **Undo** — steps back through paint/split/feed/grow-shrink/rebuild edits.
   (Re)build grid pushes onto the same undo history rather than clearing
   it, so an accidental rebuild click is one Undo away from full recovery.

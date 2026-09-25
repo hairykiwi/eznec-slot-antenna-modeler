@@ -15,6 +15,7 @@
     --accent-dim: #2c5d8a;
     --metal: #7d8896;
     --metal-line: #cfd6e0;
+    --split-line: #5fb0b6;
     --void: #1b1e24;
     --grid-line: #3a4049;
     --feed: #ff5470;
@@ -44,7 +45,26 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+    position: relative;
   }
+  #toast {
+    position: absolute;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    max-width: 72%;
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 9px 14px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .45);
+    cursor: pointer;
+    z-index: 5;
+  }
+  #toast.warn { border-color: #ffb454; }
   #toolbar {
     display: flex;
     align-items: center;
@@ -253,6 +273,12 @@
       <button id="toolRefineRow" class="toolbtn" data-tool="refineRow">
         <span>⋯ Split row</span><span class="k">click a row</span>
       </button>
+      <button id="refineAllBtn" class="toolbar-action-2line" title="Split every row and column in two (doubles mesh density everywhere, keeps your painting). Undo reverses it.">
+        <span>Refine all</span><span class="k">×2 density</span>
+      </button>
+      <button id="restoreMeshBtn" class="toolbar-action-2line" title="Merge every split row/column back to the original spacing, keeping your painting. Refuses if split bands are filled differently.">
+        <span>Restore</span><span class="k">uniform mesh</span>
+      </button>
       <div class="divider"></div>
       <button id="toolFeed" class="toolbtn" data-tool="feed">
         <span>⌖ Feed wire</span><span class="k">click 2 nodes</span>
@@ -274,11 +300,13 @@
         <span><span class="swatch" style="background:var(--metal)"></span>metal (filled)</span>
         <span><span class="swatch" style="background:var(--void)"></span>slot / void</span>
         <span><span class="swatch" style="background:var(--feed)"></span>feed point</span>
+        <span><span class="swatch" style="background:var(--split-line)"></span>split line</span>
       </div>
     </div>
     <div id="canvasWrap">
       <canvas id="grid"></canvas>
     </div>
+    <div id="toast" style="display:none;" title="Click to dismiss"></div>
   </div>
 </div>
 
@@ -306,7 +334,14 @@
     colWidths: [],       // length = cols, sums to `length`
     rowHeights: [],       // length = rows, sums to `width`
     cells: [],           // [row][col] boolean
-    feed: null            // {a:{r,c}, b:{r,c}} -- two grid-node indices, joined by an inserted feed wire
+    // Lineage: rowStart[i] / colStart[i] is true when the grid line just
+    // before band i is an original ("base") line, false when Split/Refine
+    // created it. Consecutive bands joined by a false flag are siblings of
+    // one base band, so "Restore uniform mesh" can merge them back exactly.
+    rowStart: [],
+    colStart: [],
+    feed: null,           // {a:{r,c}, b:{r,c}} -- two grid-node indices, joined by an inserted feed wire
+    ghost: null           // {a:[x,y], b:[x,y]} -- plane-local coords of a removed feed wire's nodes
   };
 
   var tool = 'paint';
@@ -330,7 +365,8 @@
     undoStack.push(JSON.stringify({
       colWidths: state.colWidths, rowHeights: state.rowHeights,
       cells: state.cells, feed: state.feed,
-      length: state.length, width: state.width
+      length: state.length, width: state.width,
+      rowStart: state.rowStart, colStart: state.colStart, ghost: state.ghost
     }));
     if (undoStack.length > MAX_UNDO) undoStack.shift();
   }
@@ -342,6 +378,9 @@
     state.rowHeights = snap.rowHeights;
     state.cells = snap.cells;
     state.feed = snap.feed;
+    state.rowStart = snap.rowStart;
+    state.colStart = snap.colStart;
+    state.ghost = snap.ghost || null;
     // Grow/shrink (and rebuild) also change the substrate's overall size,
     // which drives canvas sizing and the Y-axis flip -- without restoring
     // these too, the border/reference-grid stay sized to the stale value
@@ -408,7 +447,10 @@
     state.colWidths = evenSplits(length, cols);
     state.rowHeights = evenSplits(width, rows);
     state.cells = makeArray2D(rows, cols, true);
+    state.rowStart = allTrue(rows);
+    state.colStart = allTrue(cols);
     state.feed = null;
+    state.ghost = null;
     pendingFeedNode = null;
     zoomLevel = 1;
     var zoomLabelEl = document.getElementById('zoomLabel');
@@ -421,6 +463,12 @@
   function evenSplits(total, n) {
     var arr = [];
     for (var i = 0; i < n; i++) arr.push(total / n);
+    return arr;
+  }
+
+  function allTrue(n) {
+    var arr = [];
+    for (var i = 0; i < n; i++) arr.push(true);
     return arr;
   }
 
@@ -452,6 +500,7 @@
     pushUndo();
     var w = state.colWidths[ci] / 2;
     state.colWidths.splice(ci, 1, w, w);
+    state.colStart.splice(ci, 1, state.colStart[ci], false);
     for (var r = 0; r < state.cells.length; r++) {
       var v = state.cells[r][ci];
       state.cells[r].splice(ci, 1, v, v);
@@ -467,6 +516,7 @@
     pushUndo();
     var h = state.rowHeights[ri] / 2;
     state.rowHeights.splice(ri, 1, h, h);
+    state.rowStart.splice(ri, 1, state.rowStart[ri], false);
     var srcRow = state.cells[ri];
     state.cells.splice(ri, 1, srcRow.slice(), srcRow.slice());
     if (state.feed) {
@@ -492,6 +542,27 @@
     if (pointsEqual2D(a, b)) state.feed = null;
   }
 
+  function feedCoords() {
+    if (!state.feed) return null;
+    return { a: feedNodeXY(state.feed.a), b: feedNodeXY(state.feed.b) };
+  }
+
+  // Growing/shrinking at the left or bottom edge moves the coordinate origin,
+  // so a stored ghost has to move with the geometry. It is dropped if it
+  // ends up off the plate.
+  function shiftGhost(dx, dy) {
+    if (!state.ghost) return;
+    var g = {
+      a: [state.ghost.a[0] + dx, state.ghost.a[1] + dy],
+      b: [state.ghost.b[0] + dx, state.ghost.b[1] + dy]
+    };
+    var eps = 1e-6;
+    var inside = [g.a, g.b].every(function (p) {
+      return p[0] >= -eps && p[0] <= state.length + eps && p[1] >= -eps && p[1] <= state.width + eps;
+    });
+    state.ghost = inside ? g : null;
+  }
+
   function syncDimensionFields() {
     document.getElementById('dimLength').value = round(state.length, 5);
     document.getElementById('dimWidth').value = round(state.width, 5);
@@ -502,11 +573,13 @@
     var w = newEdgeCellSize();
     var atStart = edge === 'left';
     state.colWidths.splice(atStart ? 0 : state.colWidths.length, 0, w);
+    state.colStart.splice(atStart ? 0 : state.colStart.length, 0, true);
     for (var r = 0; r < state.cells.length; r++) {
       state.cells[r].splice(atStart ? 0 : state.cells[r].length, 0, true);
     }
     if (atStart && state.feed) { state.feed.a.c += 1; state.feed.b.c += 1; }
     state.length += w;
+    if (atStart) shiftGhost(w, 0);
     syncDimensionFields();
     renderAll();
   }
@@ -516,8 +589,15 @@
     pushUndo();
     var atStart = edge === 'left';
     var idx = atStart ? 0 : state.colWidths.length - 1;
-    state.length -= state.colWidths[idx];
+    var removed = state.colWidths[idx];
+    var fc = feedCoords();
+    state.length -= removed;
     state.colWidths.splice(idx, 1);
+    // The new first/last band of a group that lost its start keeps the group
+    // intact by becoming the start itself.
+    var wasStart = state.colStart[idx];
+    state.colStart.splice(idx, 1);
+    if (wasStart && idx < state.colStart.length) state.colStart[idx] = true;
     for (var r = 0; r < state.cells.length; r++) state.cells[r].splice(idx, 1);
     if (state.feed) {
       var maxNode = state.colWidths.length;
@@ -530,6 +610,8 @@
       }
       clearDegenerateFeed();
     }
+    if (fc && !state.feed) state.ghost = fc;
+    shiftGhost(atStart ? -removed : 0, 0);
     syncDimensionFields();
     renderAll();
   }
@@ -545,9 +627,11 @@
     var newRow = [];
     for (var c = 0; c < cols; c++) newRow.push(true);
     state.rowHeights.splice(atStart ? 0 : state.rowHeights.length, 0, h);
+    state.rowStart.splice(atStart ? 0 : state.rowStart.length, 0, true);
     state.cells.splice(atStart ? 0 : state.cells.length, 0, newRow);
     if (atStart && state.feed) { state.feed.a.r += 1; state.feed.b.r += 1; }
     state.width += h;
+    if (atStart) shiftGhost(0, h);
     syncDimensionFields();
     renderAll();
   }
@@ -557,8 +641,13 @@
     pushUndo();
     var atStart = edge === 'bottom'; // see note in addRow
     var idx = atStart ? 0 : state.rowHeights.length - 1;
-    state.width -= state.rowHeights[idx];
+    var removed = state.rowHeights[idx];
+    var fc = feedCoords();
+    state.width -= removed;
     state.rowHeights.splice(idx, 1);
+    var wasStart = state.rowStart[idx];
+    state.rowStart.splice(idx, 1);
+    if (wasStart && idx < state.rowStart.length) state.rowStart[idx] = true;
     state.cells.splice(idx, 1);
     if (state.feed) {
       var maxNode = state.rowHeights.length;
@@ -571,6 +660,8 @@
       }
       clearDegenerateFeed();
     }
+    if (fc && !state.feed) state.ghost = fc;
+    shiftGhost(0, atStart ? -removed : 0);
     syncDimensionFields();
     renderAll();
   }
@@ -627,7 +718,9 @@
       for (var c = 0; c <= cols; c++) {
         if (filled(r, c - 1) || filled(r, c)) {
           var x = xs[c];
-          wires.push({ p1: [x, ys[r]], p2: [x, ys[r + 1]] });
+          // A wire sits on grid line c; it's a "split line" if Split/Refine
+          // created it (interior line whose band is a sibling of the previous).
+          wires.push({ p1: [x, ys[r]], p2: [x, ys[r + 1]], split: c > 0 && c < cols && !state.colStart[c] });
         }
       }
     }
@@ -636,7 +729,7 @@
       for (var r2 = 0; r2 <= rows; r2++) {
         if (filled(r2 - 1, c2) || filled(r2, c2)) {
           var y = ys[r2];
-          wires.push({ p1: [xs[c2], y], p2: [xs[c2 + 1], y] });
+          wires.push({ p1: [xs[c2], y], p2: [xs[c2 + 1], y], split: r2 > 0 && r2 < rows && !state.rowStart[r2] });
         }
       }
     }
@@ -649,7 +742,8 @@
     for (var i = 0; i < wires2d.length; i++) {
       wires.push({
         p1: toXYZLocal(wires2d[i].p1[0], wires2d[i].p1[1]),
-        p2: toXYZLocal(wires2d[i].p2[0], wires2d[i].p2[1])
+        p2: toXYZLocal(wires2d[i].p2[0], wires2d[i].p2[1]),
+        split: wires2d[i].split
       });
     }
     return wires;
@@ -706,6 +800,179 @@
       }
     }
     return null;
+  }
+
+  // ---------------------------------------------------------------------
+  // Mesh density: Refine all / Restore uniform mesh, and the "ghost" of a
+  // removed feed wire.
+  // ---------------------------------------------------------------------
+  var MAX_TOOL_WIRES = 10000;
+  var toastTimer = null;
+
+  function showToast(msg, kind) {
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = kind === 'warn' ? 'warn' : '';
+    el.style.display = 'block';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.style.display = 'none'; }, 9000);
+  }
+
+  // Grid node index whose coordinates match p (plane-local), or null.
+  function nodeAtCoord(p) {
+    var xs = colEdgePositions(), ys = rowEdgePositions();
+    var c = -1, r = -1, i;
+    for (i = 0; i < xs.length; i++) if (Math.abs(xs[i] - p[0]) < 1e-6) { c = i; break; }
+    for (i = 0; i < ys.length; i++) if (Math.abs(ys[i] - p[1]) < 1e-6) { r = i; break; }
+    return (c >= 0 && r >= 0) ? { r: r, c: c } : null;
+  }
+
+  // Runs of sibling bands: [[from,to], ...] (inclusive), one per base band.
+  function bandGroups(starts) {
+    var groups = [], from = 0;
+    for (var i = 1; i <= starts.length; i++) {
+      if (i === starts.length || starts[i]) { groups.push([from, i - 1]); from = i; }
+    }
+    return groups;
+  }
+
+  function sumBands(sizes, g) {
+    var s = 0;
+    for (var k = g[0]; k <= g[1]; k++) s += sizes[k];
+    return s;
+  }
+
+  // All-or-nothing: merges every split band back into its base band. Refuses
+  // (changing nothing) if any group's sub-bands are filled differently, since
+  // merging would silently alter the slot geometry.
+  function restoreUniformMesh() {
+    var rowGroups = bandGroups(state.rowStart), colGroups = bandGroups(state.colStart);
+    var rowsToMerge = rowGroups.filter(function (g) { return g[1] > g[0]; });
+    var colsToMerge = colGroups.filter(function (g) { return g[1] > g[0]; });
+    if (!rowsToMerge.length && !colsToMerge.length) {
+      showToast('Nothing to restore: the mesh has no split lines.');
+      return;
+    }
+
+    var xs = colEdgePositions(), ys = rowEdgePositions();
+    var conflicts = [];
+    rowsToMerge.forEach(function (g) {
+      for (var k = g[0] + 1; k <= g[1]; k++) {
+        var differs = state.cells[k].some(function (v, c) { return v !== state.cells[g[0]][c]; });
+        if (differs) {
+          conflicts.push('rows at ' + axisLabelV() + ' ' + round(ys[g[0]], 3) + '-' + round(ys[g[1] + 1], 3));
+          return;
+        }
+      }
+    });
+    colsToMerge.forEach(function (g) {
+      for (var k = g[0] + 1; k <= g[1]; k++) {
+        var differs = state.cells.some(function (row) { return row[k] !== row[g[0]]; });
+        if (differs) {
+          conflicts.push('columns at ' + axisLabelH() + ' ' + round(xs[g[0]], 3) + '-' + round(xs[g[1] + 1], 3));
+          return;
+        }
+      }
+    });
+    if (conflicts.length) {
+      var shown = conflicts.slice(0, 4).join(', ') + (conflicts.length > 4 ? ', ...' : '');
+      showToast("Can't restore uniform mesh: the split bands in " + shown +
+        ' are filled differently. Paint them to match, then try again. Nothing was changed.', 'warn');
+      return;
+    }
+
+    pushUndo();
+    var fc = feedCoords();
+    var newCells = rowGroups.map(function (g) {
+      var src = state.cells[g[0]];
+      return colGroups.map(function (cg) { return src[cg[0]]; });
+    });
+    var newHeights = rowGroups.map(function (g) { return sumBands(state.rowHeights, g); });
+    var newWidths = colGroups.map(function (g) { return sumBands(state.colWidths, g); });
+    state.cells = newCells;
+    state.rowHeights = newHeights;
+    state.colWidths = newWidths;
+    state.rowStart = allTrue(newHeights.length);
+    state.colStart = allTrue(newWidths.length);
+    pendingFeedNode = null;
+
+    var note = '';
+    if (fc) {
+      var na = nodeAtCoord(fc.a), nb = nodeAtCoord(fc.b);
+      if (na && nb && !findFeedConflict(feedNodeXY(na), feedNodeXY(nb))) {
+        state.feed = { a: na, b: nb };
+      } else {
+        state.feed = null;
+        state.ghost = fc;
+        note = ' The feed wire sat on a removed line, so it was cleared; dashed circles mark where it was' +
+          ' (with the Feed tool, click the center circle to restore it if its nodes exist again).';
+      }
+    }
+    renderAll();
+    showToast('Restored uniform mesh: merged ' + rowsToMerge.length + ' row and ' + colsToMerge.length +
+      ' column group(s) back to their original spacing.' + note);
+  }
+
+  // Splits every row and column in two (doubling mesh density everywhere,
+  // keeping the painted slot). Wire diameter is deliberately left alone.
+  function refineAll() {
+    var R = state.rowHeights.length, C = state.colWidths.length;
+    var estimate = 8 * R * C + 2 * R + 2 * C;
+    if (estimate > MAX_TOOL_WIRES) {
+      showToast('Refine all would produce up to ~' + estimate + ' wires; this tool caps it at ' +
+        MAX_TOOL_WIRES + '. Restore uniform mesh (or Undo) first.', 'warn');
+      return;
+    }
+    pushUndo();
+    var newHeights = [], newRowStart = [], newCells = [];
+    for (var r = 0; r < R; r++) {
+      var h = state.rowHeights[r] / 2;
+      newHeights.push(h, h);
+      newRowStart.push(state.rowStart[r], false);
+      var wide = [];
+      state.cells[r].forEach(function (v) { wide.push(v, v); });
+      newCells.push(wide, wide.slice());
+    }
+    var newWidths = [], newColStart = [];
+    for (var c = 0; c < C; c++) {
+      var w = state.colWidths[c] / 2;
+      newWidths.push(w, w);
+      newColStart.push(state.colStart[c], false);
+    }
+    state.rowHeights = newHeights;
+    state.colWidths = newWidths;
+    state.rowStart = newRowStart;
+    state.colStart = newColStart;
+    state.cells = newCells;
+    if (state.feed) {
+      // Old grid line k is new line 2k.
+      state.feed.a.r *= 2; state.feed.a.c *= 2;
+      state.feed.b.r *= 2; state.feed.b.c *= 2;
+    }
+    pendingFeedNode = null;
+    renderAll();
+    showToast('Mesh density doubled (' + newHeights.length + ' x ' + newWidths.length +
+      ' cells). Wire diameter was not changed.');
+  }
+
+  function ghostCenterPx() {
+    var g = state.ghost;
+    return [PAD + ((g.a[0] + g.b[0]) / 2) * scalePxPerUnit, PAD + vPix((g.a[1] + g.b[1]) / 2)];
+  }
+
+  function restoreGhostFeed() {
+    var g = state.ghost;
+    var na = nodeAtCoord(g.a), nb = nodeAtCoord(g.b);
+    if (!na || !nb) {
+      showToast('Those nodes are no longer on the grid (a split line was merged). Split there again, or place a new feed wire.', 'warn');
+      return;
+    }
+    var conflict = findFeedConflict(feedNodeXY(na), feedNodeXY(nb));
+    if (conflict) { showToast(conflict, 'warn'); return; }
+    pushUndo();
+    state.feed = { a: na, b: nb };
+    state.ghost = null;
+    renderAll();
   }
 
   // ---------------------------------------------------------------------
@@ -776,18 +1043,23 @@
       }
     }
 
-    // extracted wires (this is the actual export geometry)
-    ctx.strokeStyle = getCSS('--metal-line');
-    ctx.lineWidth = 2;
+    // extracted wires (this is the actual export geometry). Wires lying on
+    // lines created by Split / Refine are drawn in a second color so it's
+    // obvious what "Restore uniform mesh" would merge away.
     var wires = extractWires();
-    ctx.beginPath();
-    for (var i = 0; i < wires.length; i++) {
-      var w = wires[i];
-      var a = projectToCanvas(w.p1), b = projectToCanvas(w.p2);
-      ctx.moveTo(a[0] * scalePxPerUnit, vPix(a[1]));
-      ctx.lineTo(b[0] * scalePxPerUnit, vPix(b[1]));
-    }
-    ctx.stroke();
+    ctx.lineWidth = 2;
+    [false, true].forEach(function (isSplit) {
+      ctx.strokeStyle = getCSS(isSplit ? '--split-line' : '--metal-line');
+      ctx.beginPath();
+      for (var i = 0; i < wires.length; i++) {
+        var w = wires[i];
+        if (!!w.split !== isSplit) continue;
+        var a = projectToCanvas(w.p1), b = projectToCanvas(w.p2);
+        ctx.moveTo(a[0] * scalePxPerUnit, vPix(a[1]));
+        ctx.lineTo(b[0] * scalePxPerUnit, vPix(b[1]));
+      }
+      ctx.stroke();
+    });
 
     // faint full grid lines (all candidate edges) for editing reference
     ctx.strokeStyle = 'rgba(255,255,255,0.07)';
@@ -833,6 +1105,31 @@
       ctx.beginPath();
       ctx.arc(pp[0] * scalePxPerUnit, vPix(pp[1]), 6, 0, Math.PI * 2);
       ctx.stroke();
+    }
+
+    // ghost of a removed feed wire: hollow dashed circles at its old node
+    // positions and its source (center) point, so the position isn't lost
+    // while iterating. Click the center circle with the Feed tool to restore.
+    if (!state.feed && state.ghost) {
+      var ga = state.ghost.a, gb = state.ghost.b;
+      ctx.save();
+      ctx.globalAlpha = 0.8;
+      ctx.strokeStyle = getCSS('--feed');
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(ga[0] * scalePxPerUnit, vPix(ga[1]));
+      ctx.lineTo(gb[0] * scalePxPerUnit, vPix(gb[1]));
+      ctx.stroke();
+      [ga, gb].forEach(function (p) {
+        ctx.beginPath();
+        ctx.arc(p[0] * scalePxPerUnit, vPix(p[1]), 5, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+      ctx.beginPath();
+      ctx.arc(((ga[0] + gb[0]) / 2) * scalePxPerUnit, vPix((ga[1] + gb[1]) / 2), 7, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
     }
 
     // outer border + axis labels
@@ -936,6 +1233,11 @@
       if (!rc) return;
       splitRow(rc.r);
     } else if (tool === 'feed') {
+      // Clicking the center circle of a feed wire's ghost restores it.
+      if (!pendingFeedNode && !state.feed && state.ghost) {
+        var gp = ghostCenterPx();
+        if (Math.hypot(px - gp[0], py - gp[1]) <= 10) { restoreGhostFeed(); return; }
+      }
       var node = nearestNode(px, py);
       if (!pendingFeedNode) {
         pendingFeedNode = node;
@@ -955,6 +1257,7 @@
       warnEl.style.display = 'none';
       pushUndo();
       state.feed = { a: a, b: b };
+      state.ghost = null;
       renderAll();
     }
   });
@@ -1327,12 +1630,24 @@
   document.getElementById('removeColRight').addEventListener('click', function () { removeColumn('right'); });
 
   document.getElementById('clearFeedBtn').addEventListener('click', function () {
+    // Clearing a feed leaves a ghost marking where it was; clearing again
+    // (with no feed) dismisses the ghost.
+    if (!state.feed && !state.ghost && !pendingFeedNode) return;
     pushUndo();
-    state.feed = null;
+    if (state.feed) {
+      state.ghost = feedCoords();
+      state.feed = null;
+    } else {
+      state.ghost = null;
+    }
     pendingFeedNode = null;
     document.getElementById('feedWarn').style.display = 'none';
     renderAll();
   });
+
+  document.getElementById('refineAllBtn').addEventListener('click', refineAll);
+  document.getElementById('restoreMeshBtn').addEventListener('click', restoreUniformMesh);
+  document.getElementById('toast').addEventListener('click', function () { this.style.display = 'none'; });
 
   document.getElementById('exportBtn').addEventListener('click', doExport);
 
