@@ -254,6 +254,9 @@
 
     <h2>Export</h2>
     <button id="exportBtn" class="primary" style="width:100%;">Download wire coordinate file (.txt)</button>
+    <button id="importBtn" style="width:100%; margin-top:8px;">Import wire file (.txt)&hellip;</button>
+    <input type="file" id="importFile" accept=".txt,text/plain" style="display:none;">
+    <p class="hint">Import re-opens a file exported by this tool and replaces the current design (Undo brings it back). Files it can't represent exactly are rejected with a reason.</p>
     <label style="margin-top:10px;">Preview</label>
     <textarea id="exportPreview" readonly></textarea>
   </div>
@@ -361,12 +364,44 @@
     return state.units === 'mm' ? m * 1000 : m * 39.37007874015748;
   }
 
-  function pushUndo() {
+  // Build-level settings (units, plane, offset, sizes, frequency). Ordinary
+  // edits leave these alone, so only operations that can change them --
+  // (Re)build and Import -- store them in their undo snapshot.
+  function captureSettings() {
+    return {
+      units: state.units, plane: state.plane, offset: state.offset,
+      maxCell: state.maxCell, wireDia: state.wireDia, feedWireDia: state.feedWireDia,
+      freqValue: document.getElementById('freqValue').value,
+      freqUnit: document.getElementById('freqUnit').value
+    };
+  }
+
+  function applySettings(s) {
+    state.units = s.units;
+    state.plane = s.plane;
+    state.offset = s.offset;
+    state.maxCell = s.maxCell;
+    state.wireDia = s.wireDia;
+    state.feedWireDia = s.feedWireDia;
+    document.querySelector('input[name=units][value="' + s.units + '"]').checked = true;
+    document.querySelector('input[name=plane][value="' + s.plane + '"]').checked = true;
+    document.getElementById('planeOffset').value = round(s.offset, 5);
+    document.getElementById('maxCell').value = round(s.maxCell, 5);
+    document.getElementById('wireDia').value = round(s.wireDia, 5);
+    document.getElementById('feedWireDia').value = round(s.feedWireDia, 5);
+    document.getElementById('freqValue').value = s.freqValue;
+    document.getElementById('freqUnit').value = s.freqUnit;
+    updateOffsetLabel();
+    updateLambdaHint();
+  }
+
+  function pushUndo(withSettings) {
     undoStack.push(JSON.stringify({
       colWidths: state.colWidths, rowHeights: state.rowHeights,
       cells: state.cells, feed: state.feed,
       length: state.length, width: state.width,
-      rowStart: state.rowStart, colStart: state.colStart, ghost: state.ghost
+      rowStart: state.rowStart, colStart: state.colStart, ghost: state.ghost,
+      settings: withSettings ? captureSettings() : null
     }));
     if (undoStack.length > MAX_UNDO) undoStack.shift();
   }
@@ -381,6 +416,7 @@
     state.rowStart = snap.rowStart;
     state.colStart = snap.colStart;
     state.ghost = snap.ghost || null;
+    if (snap.settings) applySettings(snap.settings);
     // Grow/shrink (and rebuild) also change the substrate's overall size,
     // which drives canvas sizing and the Y-axis flip -- without restoring
     // these too, the border/reference-grid stay sized to the stale value
@@ -434,7 +470,7 @@
     // Snapshot the pre-rebuild grid so an accidental (Re)build click can be
     // undone, same as any other edit -- skip on the very first build (page
     // load), where there's nothing yet to preserve.
-    if (state.colWidths.length) pushUndo();
+    if (state.colWidths.length) pushUndo(true);
 
     state.units = units;
     state.plane = plane;
@@ -973,6 +1009,294 @@
     state.feed = { a: na, b: nb };
     state.ghost = null;
     renderAll();
+  }
+
+  // ---------------------------------------------------------------------
+  // Import: read back a wire file exported by this tool. Grid lines come
+  // from the wires' coordinates (or the exact lattice in the "ms1" state
+  // comment when present); a cell is filled iff all four of its edges are
+  // wires. The result is then re-checked against the export rule, so files
+  // this tool couldn't have produced (hand-edited, locally refined) are
+  // rejected instead of being silently misread.
+  // ---------------------------------------------------------------------
+  var IMPORT_TOL = 1e-4;
+
+  function importError(msg) {
+    var e = new Error(msg);
+    e.isImportError = true;
+    return e;
+  }
+
+  function parseUnitsTokens(tokens, lineNo) {
+    var norm = tokens.map(function (t) {
+      t = t.toLowerCase();
+      if (t === 'in' || t === 'inch' || t === 'inches') return 'in';
+      if (t === 'mm') return 'mm';
+      throw importError('line ' + lineNo + ': unsupported unit "' + t + '" (this tool reads mm or in).');
+    });
+    if (norm.length > 2 || (norm.length === 2 && norm[0] !== norm[1])) {
+      throw importError('line ' + lineNo + ': coordinate and diameter units must match (e.g. "in in").');
+    }
+    return norm[0];
+  }
+
+  function readStateComment(lines) {
+    var chunks = [];
+    lines.forEach(function (ln) {
+      var m = /^\s*;\s*ms1:\s?(.*?)\s*$/.exec(ln);
+      if (m) chunks.push(m[1]);
+    });
+    if (!chunks.length) return null;
+    try {
+      var meta = JSON.parse(chunks.join(''));
+      return (meta && meta.v === 1) ? meta : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Older exports have no state comment, but their header lines still carry
+  // the Z offset and design frequency.
+  function readHeaderInfo(lines) {
+    var info = {};
+    lines.forEach(function (ln) {
+      var m = /Vertical \(Z\) offset:\s*(-?[\d.]+)/i.exec(ln);
+      if (m) info.offset = parseFloat(m[1]);
+      m = /Design frequency:\s*([\d.]+)\s*(kHz|MHz|GHz)/i.exec(ln);
+      if (m) { info.freq = parseFloat(m[1]); info.freqUnit = m[2]; }
+    });
+    return info;
+  }
+
+  function clusterValues(vals) {
+    vals.sort(function (p, q) { return p - q; });
+    var out = [];
+    vals.forEach(function (v) {
+      if (!out.length || v - out[out.length - 1] > IMPORT_TOL) out.push(v);
+    });
+    return out;
+  }
+
+  function lineIndex(lines, v) {
+    var lo = 0, hi = lines.length - 1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (Math.abs(lines[mid] - v) < IMPORT_TOL) return mid;
+      if (lines[mid] < v) lo = mid + 1; else hi = mid - 1;
+    }
+    return -1;
+  }
+
+  function isSuperLattice(big, small) {
+    for (var i = 1; i < big.length; i++) if (!(big[i] > big[i - 1])) return false;
+    return small.every(function (v) { return lineIndex(big, v) >= 0; });
+  }
+
+  function flagsFromString(str, n) {
+    if (typeof str !== 'string' || str.length !== n || !/^[01]+$/.test(str)) return null;
+    return str.split('').map(function (ch) { return ch === '1'; });
+  }
+
+  function importWireText(text, fileName) {
+    var lines = text.split(/\r\n|\r|\n/);
+    var meta = readStateComment(lines);
+    var header = readHeaderInfo(lines);
+
+    // ---- parse -------------------------------------------------------
+    var units = null, wires = [];
+    lines.forEach(function (raw, i) {
+      var semi = raw.indexOf(';');
+      var body = (semi >= 0 ? raw.slice(0, semi) : raw).trim();
+      if (!body) return;
+      var tok = body.split(/[\s,]+/).filter(Boolean);
+      var allText = tok.every(function (t) { return isNaN(Number(t)); });
+      if (allText) {
+        if (units !== null || wires.length) throw importError('line ' + (i + 1) + ': unexpected text "' + body + '".');
+        units = parseUnitsTokens(tok, i + 1);
+        return;
+      }
+      var nums = tok.map(Number);
+      if (nums.some(isNaN) || (tok.length !== 7 && tok.length !== 8)) {
+        throw importError('line ' + (i + 1) + ': expected 7 or 8 numbers per wire (x1 y1 z1 x2 y2 z2 diameter [segments]).');
+      }
+      wires.push({ p1: nums.slice(0, 3), p2: nums.slice(3, 6), dia: nums[6], segs: tok.length === 8 ? nums[7] : null, line: i + 1 });
+    });
+    if (!units) throw importError('no units line found (EZNEC would assume meters, which this tool does not read). Expected "in in" or "mm mm" before the wires.');
+    if (!wires.length) throw importError('no wires found.');
+    if (wires.length > MAX_TOOL_WIRES) throw importError('more than ' + MAX_TOOL_WIRES + ' wires; this tool caps meshes at that size.');
+
+    // The tool always exports its feed wire first, with an explicit 1-segment field.
+    var feedWire = wires[0].segs != null ? wires[0] : null;
+    var mesh = feedWire ? wires.slice(1) : wires;
+    if (!mesh.length) throw importError('no mesh wires found.');
+
+    // ---- plane ---------------------------------------------------------
+    var pts = [];
+    mesh.forEach(function (w) { pts.push(w.p1, w.p2); });
+    var flat = [0, 1, 2].filter(function (a) {
+      return pts.every(function (p) { return Math.abs(p[a] - pts[0][a]) < IMPORT_TOL; });
+    });
+    if (flat.length !== 1) throw importError('the mesh wires must lie in one flat plane (XY, XZ or YZ).');
+    var cAxis = flat[0];
+    var plane = cAxis === 2 ? 'XY' : (cAxis === 1 ? 'XZ' : 'YZ');
+    if (meta && meta.p && meta.p !== plane) {
+      throw importError('the file\'s state comment says ' + meta.p + ' but its wires lie in ' + plane + ' (edited by hand?).');
+    }
+    var planePos = pts[0][cAxis];
+    var hAxis = plane === 'YZ' ? 1 : 0;
+    var vAxis = plane === 'XY' ? 1 : 2;
+    var offset;
+    if (plane === 'XY') {
+      offset = planePos;
+    } else if (meta && typeof meta.o === 'number') {
+      offset = meta.o;
+    } else if (header.offset != null) {
+      offset = header.offset;
+    } else {
+      offset = Math.min.apply(null, pts.map(function (p) { return p[2]; }));
+    }
+    var notes = [];
+    if (plane !== 'XY' && Math.abs(planePos) > IMPORT_TOL) {
+      notes.push('The plate sat at ' + (cAxis === 0 ? 'X' : 'Y') + '=' + round(planePos, 4) + ' in the file; this tool always places it at 0.');
+    }
+    function toLocal(p) { return [p[hAxis], plane === 'XY' ? p[vAxis] : p[vAxis] - offset]; }
+
+    var segs = mesh.map(function (w) {
+      var a = toLocal(w.p1), b = toLocal(w.p2);
+      var sameX = Math.abs(a[0] - b[0]) < IMPORT_TOL, sameY = Math.abs(a[1] - b[1]) < IMPORT_TOL;
+      if (sameX === sameY) throw importError('line ' + w.line + ': mesh wires must run along the plate\'s rows or columns (this one is diagonal or zero-length).');
+      return { a: a, b: b, line: w.line };
+    });
+
+    var feedLocal = null;
+    if (feedWire) {
+      if (Math.abs(feedWire.p1[cAxis] - planePos) < IMPORT_TOL && Math.abs(feedWire.p2[cAxis] - planePos) < IMPORT_TOL) {
+        feedLocal = [toLocal(feedWire.p1), toLocal(feedWire.p2)];
+      } else {
+        notes.push('The feed wire is off the plate\'s plane, so it was not imported.');
+      }
+    }
+
+    // ---- grid lines ----------------------------------------------------
+    var xv = [], yv = [];
+    segs.forEach(function (s) { xv.push(s.a[0], s.b[0]); yv.push(s.a[1], s.b[1]); });
+    if (feedLocal) feedLocal.forEach(function (p) { xv.push(p[0]); yv.push(p[1]); });
+    var xs = clusterValues(xv), ys = clusterValues(yv);
+    if (xs[0] < -IMPORT_TOL || ys[0] < -IMPORT_TOL) throw importError('the wires extend below the plate\'s origin.');
+    if (xs[0] > IMPORT_TOL) xs.unshift(0);
+    if (ys[0] > IMPORT_TOL) ys.unshift(0);
+    var usedMeta = false;
+    if (meta && Array.isArray(meta.x) && Array.isArray(meta.y) && isSuperLattice(meta.x, xs) && isSuperLattice(meta.y, ys)) {
+      xs = meta.x.slice();
+      ys = meta.y.slice();
+      usedMeta = true;
+    }
+    var R = ys.length - 1, C = xs.length - 1;
+    if (R < 1 || C < 1) throw importError('need at least one grid cell.');
+
+    // ---- edges, then cells ---------------------------------------------
+    var vE = [], hE = [], r, c;
+    for (r = 0; r < R; r++) vE.push(new Array(C + 1).fill(false));
+    for (r = 0; r <= R; r++) hE.push(new Array(C).fill(false));
+    segs.forEach(function (s) {
+      var xa = lineIndex(xs, s.a[0]), xb = lineIndex(xs, s.b[0]);
+      var ya = lineIndex(ys, s.a[1]), yb = lineIndex(ys, s.b[1]);
+      if (xa < 0 || xb < 0 || ya < 0 || yb < 0) throw importError('line ' + s.line + ': wire is not on the grid.');
+      if (xa === xb) {
+        var r0 = Math.min(ya, yb);
+        if (Math.abs(ya - yb) !== 1) throw importError('line ' + s.line + ': a wire spans more than one grid cell.');
+        if (vE[r0][xa]) throw importError('line ' + s.line + ': duplicate wire.');
+        vE[r0][xa] = true;
+      } else {
+        var c0 = Math.min(xa, xb);
+        if (Math.abs(xa - xb) !== 1) throw importError('line ' + s.line + ': a wire spans more than one grid cell.');
+        if (hE[ya][c0]) throw importError('line ' + s.line + ': duplicate wire.');
+        hE[ya][c0] = true;
+      }
+    });
+    var cells = [];
+    for (r = 0; r < R; r++) {
+      var row = [];
+      for (c = 0; c < C; c++) row.push(vE[r][c] && vE[r][c + 1] && hE[r][c] && hE[r + 1][c]);
+      cells.push(row);
+    }
+    function filledAt(rr, cc) { return rr >= 0 && rr < R && cc >= 0 && cc < C && cells[rr][cc]; }
+    var mismatched = 0;
+    for (r = 0; r < R; r++) for (c = 0; c <= C; c++) {
+      if ((filledAt(r, c - 1) || filledAt(r, c)) !== vE[r][c]) mismatched++;
+    }
+    for (r = 0; r <= R; r++) for (c = 0; c < C; c++) {
+      if ((filledAt(r - 1, c) || filledAt(r, c)) !== hE[r][c]) mismatched++;
+    }
+    if (mismatched) {
+      throw importError('these wires are not a mesh this tool can represent (' + mismatched +
+        ' edge(s) differ from what the painted cells would produce) -- e.g. a hand-edited or locally refined mesh.');
+    }
+
+    // ---- settings ------------------------------------------------------
+    var rowStart = usedMeta ? flagsFromString(meta.rs, R) : null;
+    var colStart = usedMeta ? flagsFromString(meta.cs, C) : null;
+    var haveLineage = !!(rowStart && colStart);
+    if (!haveLineage) { rowStart = allTrue(R); colStart = allTrue(C); }
+    rowStart[0] = true; colStart[0] = true;
+
+    var rowHeights = [], colWidths = [];
+    for (r = 0; r < R; r++) rowHeights.push(ys[r + 1] - ys[r]);
+    for (c = 0; c < C; c++) colWidths.push(xs[c + 1] - xs[c]);
+
+    var meshDia = mesh[0].dia;
+    if (mesh.some(function (w) { return Math.abs(w.dia - meshDia) > 1e-9; })) {
+      notes.push('Mesh wires had mixed diameters; using ' + meshDia + '.');
+    }
+    var freqSelect = document.getElementById('freqUnit');
+    var freqValue = document.getElementById('freqValue').value, freqUnit = freqSelect.value;
+    var fv = (meta && meta.f) ? meta.f : header.freq;
+    var fu = (meta && meta.fu) ? meta.fu : header.freqUnit;
+    if (fv) {
+      freqValue = fv;
+      var opt = Array.prototype.find.call(freqSelect.options, function (o) {
+        return fu && o.textContent.toLowerCase() === String(fu).toLowerCase();
+      });
+      if (opt) freqUnit = opt.value;
+    }
+    var maxBand = Math.max.apply(null, rowHeights.concat(colWidths));
+    var settings = {
+      units: units, plane: plane, offset: offset,
+      maxCell: (meta && meta.c > 0) ? meta.c : maxBand,
+      wireDia: meshDia,
+      feedWireDia: feedWire ? feedWire.dia : ((meta && meta.fd > 0) ? meta.fd : state.feedWireDia),
+      freqValue: freqValue, freqUnit: freqUnit
+    };
+
+    // ---- everything validated: apply -----------------------------------
+    pushUndo(true);
+    applySettings(settings);
+    state.length = xs[xs.length - 1];
+    state.width = ys[ys.length - 1];
+    state.colWidths = colWidths;
+    state.rowHeights = rowHeights;
+    state.cells = cells;
+    state.rowStart = rowStart;
+    state.colStart = colStart;
+    state.feed = null;
+    state.ghost = null;
+    pendingFeedNode = null;
+    zoomLevel = 1;
+    document.getElementById('zoomLabel').textContent = '100%';
+    syncDimensionFields();
+
+    var feedPlaced = false;
+    if (feedLocal) {
+      var fa = nodeAtCoord(feedLocal[0]), fb = nodeAtCoord(feedLocal[1]);
+      var conflict = (fa && fb) ? findFeedConflict(feedNodeXY(fa), feedNodeXY(fb)) : 'its nodes are not on the grid';
+      if (!conflict) { state.feed = { a: fa, b: fb }; feedPlaced = true; }
+      else notes.push('The feed wire could not be placed (' + conflict + ').');
+    }
+    renderAll();
+    showToast('Imported ' + wires.length + ' wires from ' + fileName + ': ' + R + ' x ' + C + ' cells, ' + plane +
+      ' plane' + (feedPlaced ? ', feed wire restored' : ', no feed wire') + '.' +
+      ((usedMeta && haveLineage) ? '' : ' This file has no usable state info, so every grid line counts as original (no cyan/Restore), and an all-void band at the plate edge -- which has no wires -- cannot be detected; check the plate size.') +
+      (notes.length ? ' ' + notes.join(' ') : '') + ' Undo restores the previous design.');
   }
 
   // ---------------------------------------------------------------------
@@ -1544,6 +1868,23 @@
       var w = wires[i];
       lines.push(wireLine(applyZOffset(w.p1), applyZOffset(w.p2), dia));
     }
+
+    // Machine-readable state so this tool can re-import the file exactly.
+    // Comments (like everything after a semicolon) are ignored by EZNEC; they
+    // are split into short lines so no line is long.
+    var startsStr = function (arr) { return arr.map(function (f) { return f ? '1' : '0'; }).join(''); };
+    var unitText = document.getElementById('freqUnit').selectedOptions[0].textContent;
+    var meta = {
+      v: 1, u: state.units, p: state.plane, o: round(state.offset, 5),
+      c: round(newEdgeCellSize(), 5), d: round(state.wireDia, 5), fd: round(state.feedWireDia, 5),
+      f: parseFloat(document.getElementById('freqValue').value) || null, fu: unitText,
+      x: colEdgePositions().map(function (v) { return round(v, 5); }),
+      y: rowEdgePositions().map(function (v) { return round(v, 5); }),
+      cs: startsStr(state.colStart), rs: startsStr(state.rowStart)
+    };
+    var json = JSON.stringify(meta);
+    lines.push('; Slot Antenna Modeler state (lets the tool re-import this file exactly; EZNEC ignores it):');
+    for (var k = 0; k < json.length; k += 100) lines.push('; ms1: ' + json.slice(k, k + 100));
     return lines;
   }
 
@@ -1651,6 +1992,33 @@
 
   document.getElementById('exportBtn').addEventListener('click', doExport);
 
+  document.getElementById('importBtn').addEventListener('click', function () {
+    document.getElementById('importFile').click();
+  });
+  document.getElementById('importFile').addEventListener('change', function () {
+    var input = this, file = input.files && input.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        importWireText(String(reader.result), file.name);
+      } catch (err) {
+        if (err && err.isImportError) {
+          showToast("Couldn't import " + file.name + ': ' + err.message, 'warn');
+        } else {
+          console.error(err);
+          showToast("Couldn't import " + file.name + ': unexpected error (see the browser console).', 'warn');
+        }
+      }
+      input.value = '';
+    };
+    reader.onerror = function () {
+      showToast("Couldn't read " + file.name + '.', 'warn');
+      input.value = '';
+    };
+    reader.readAsText(file);
+  });
+
   document.querySelectorAll('input[name=units]').forEach(function (r) {
     r.addEventListener('change', function () {
       var oldUnits = state.units, newUnits = this.value;
@@ -1670,9 +2038,10 @@
         feedDiaEl.value = round(parseFloat(feedDiaEl.value) * factor, 5);
         offEl.value = round((parseFloat(offEl.value) || 0) * factor, 5);
       }
-      state.units = newUnits;
-      updateLambdaHint(); updateSlotHint();
+      // buildGrid reads the checked radio and sets state.units itself; leaving
+      // state.units alone until then lets its undo snapshot capture the old units.
       buildGrid(); // rebuild so internal grid coordinates match the new unit exactly
+      updateLambdaHint();
     });
   });
   document.querySelectorAll('input[name=plane]').forEach(function (r) {

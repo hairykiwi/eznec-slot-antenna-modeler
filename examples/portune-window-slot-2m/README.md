@@ -79,7 +79,9 @@ Load these directly in EZNEC to reproduce the results above:
   directly from the Slot Antenna Modeler for the modified design (wires only, per the
   format's design -- frequency/ground/source are already set up in the `.EZ` files
   above if you just want to explore, or re-import this into a fresh EZNEC description
-  to see the raw tool output).
+  to see the raw tool output). You can also open it in the Slot Antenna Modeler itself
+  with **Import wire file (.txt)** to see and edit the exact mesh (the slot, the feed
+  wire, the refined band around it).
 
 ## Source
 

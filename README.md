@@ -125,6 +125,28 @@ File**. The file contains wires only — frequency, ground, and (if you didn't
 place a feed wire in the tool) the source still need to be set up manually
 in EZNEC afterward.
 
+**Import wire file (.txt)** does the reverse: it re-opens a file exported by
+this tool, rebuilding the grid, the painted slot, the feed wire, and the
+settings (units, plane, offset, sizes, frequency), and replaces the current
+design (Undo brings it back). The export ends with a few short `; ms1:`
+comment lines (EZNEC ignores comments) holding the exact grid lines and which
+of them Split/Refine created, so a re-import is exact and Restore uniform
+mesh keeps working; a file exported with them re-exports byte-for-byte.
+
+Files exported before those lines existed still import: the grid is inferred
+from the wire coordinates, and the Z offset and frequency are read from the
+header comments. Two things can't be recovered without the state lines:
+which lines were split, and an all-void band along the plate's edge (it has
+no wires, so the plate can come back smaller — the import message warns
+you to check).
+
+Import only accepts meshes this tool could have produced. It rebuilds the
+painted cells from the wires and re-checks them against the export rule, so
+hand-edited or locally refined meshes (and EZNEC's own WIRES report, which
+is a listing, not the import format) are rejected with the reason rather
+than misread. A single fully-surrounded void cell is electrically identical
+to a filled one and imports as filled.
+
 ## Known limitations
 
 - **Non-uniform grid vs. wire diameter**: locally refining the grid (Split
