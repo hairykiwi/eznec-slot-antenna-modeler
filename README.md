@@ -19,6 +19,11 @@ No install, no build step, no server required. Just open `index.html` in any
 modern desktop browser (Chrome, Edge, Firefox, Safari) — double-click it, or
 drag it into a browser window.
 
+It opens with the [Portune 2m window-slot example](examples/portune-window-slot-2m/) loaded
+(inch, 146 MHz, YZ plane), so there is something to explore straight away. (Re)build grid
+gives you a blank plate with the current settings, and Undo is not needed to get
+back: reload the page for the example again.
+
 ## Usage
 
 ### 1. Units & Frequency
